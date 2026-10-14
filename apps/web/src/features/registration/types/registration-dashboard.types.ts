@@ -1,23 +1,11 @@
 export type RegistrationType = 'TENANT' | 'PATIENT';
 
 export type RegistrationStatus =
-  | 'INITIATED'
-  | 'VERIFICATION_REQUIRED'
-  | 'ONBOARDING'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'EXPIRED';
+  'INITIATED' | 'VERIFICATION_REQUIRED' | 'ONBOARDING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
 
-export type VerificationStatus =
-  | 'PENDING'
-  | 'PARTIALLY_VERIFIED'
-  | 'VERIFIED'
-  | 'FAILED';
+export type VerificationStatus = 'PENDING' | 'PARTIALLY_VERIFIED' | 'VERIFIED' | 'FAILED';
 
-export type OnboardingStatus =
-  | 'NOT_STARTED'
-  | 'IN_PROGRESS'
-  | 'COMPLETED';
+export type OnboardingStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
 
 export interface RegistrationIdentity {
   type: string;
@@ -65,6 +53,8 @@ export interface RegistrationDashboardResponse {
     email: {
       address: string | null;
       verified: boolean;
+      challengeId?: string | null;
+      challengeExpiresAt?: string | null;
     };
     phone: {
       number: string | null;
@@ -77,6 +67,17 @@ export interface RegistrationDashboardResponse {
     | {
         type: 'PATIENT';
         data: PatientProfile | null;
+        complete: boolean;
+      }
+    | {
+        type: 'STAFF';
+        data: {
+          firstName: string;
+          lastName: string;
+          email: string;
+          jobTitle: string | null;
+          staffNumber: string | null;
+        } | null;
         complete: boolean;
       }
     | {

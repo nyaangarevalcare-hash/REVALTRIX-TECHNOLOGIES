@@ -1,4 +1,6 @@
 import {
+  IsBoolean,
+  IsEmail,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,6 +20,41 @@ export class CreateDepartmentDto {
   code!: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  shortName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(128)
+  departmentPassword?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresDepartmentPassword?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  status?: string;
+
+  @IsOptional()
   @IsUUID()
   organizationId?: string;
 
@@ -28,4 +65,32 @@ export class CreateDepartmentDto {
   @IsOptional()
   @IsUUID()
   parentId?: string;
+
+  @IsOptional()
+  @IsString()
+  headOfDepartment?: string;
+
+  @IsOptional()
+  @IsEmail()
+  contactEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  contactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  extensionNumber?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  appointmentBookingEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  walkInRegistrationEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  queueManagementEnabled?: boolean;
 }

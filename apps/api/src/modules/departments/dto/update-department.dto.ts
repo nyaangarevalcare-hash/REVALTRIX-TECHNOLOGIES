@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,6 +19,36 @@ export class UpdateDepartmentDto {
   @MinLength(2)
   @MaxLength(50)
   code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  type?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  category?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  status?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(128)
+  departmentPassword?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresDepartmentPassword?: boolean | null;
 
   @IsOptional()
   @IsUUID()

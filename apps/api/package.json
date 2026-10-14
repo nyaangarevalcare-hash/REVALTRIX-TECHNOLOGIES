@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nest build",
-    "dev": "nest start --watch",
+    "build": "pnpm --dir ../../packages/database generate && nest build",
+    "dev": "pnpm --dir ../../packages/database generate && nest start --watch",
     "start": "nest start",
     "start:prod": "node dist/main.js",
     "typecheck": "tsc --noEmit"

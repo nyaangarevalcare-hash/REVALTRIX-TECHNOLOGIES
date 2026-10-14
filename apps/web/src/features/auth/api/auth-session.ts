@@ -35,12 +35,15 @@ export function getAuthSession(): AuthSession | null {
 }
 
 export function setAuthSession(session: AuthSession): void {
-  window.sessionStorage.setItem(
-    AUTH_SESSION_KEY,
-    JSON.stringify(session),
-  );
+  window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
 }
 
 export function clearAuthSession(): void {
   window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+  for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.sessionStorage.key(index);
+    if (key?.startsWith('revaltrix_department_access:')) {
+      window.sessionStorage.removeItem(key);
+    }
+  }
 }

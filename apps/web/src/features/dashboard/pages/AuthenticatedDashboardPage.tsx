@@ -15,6 +15,8 @@ import { OrganizationPage } from '../../organization/components/OrganizationPage
 import { HospitalDashboardPage } from '../components/HospitalDashboardPage.js';
 import { BranchesPage } from '../../branches/components/BranchesPage.js';
 import { DepartmentsPage } from '../../departments/components/DepartmentsPage.js';
+import { StaffPage } from '../../staff/components/StaffPage.js';
+import { getMyStaffProfile } from '../../staff/api/staff.api.js';
 import { ServicesPage } from '../../services/components/ServicesPage.js';
 import { PatientsPage } from '../../patients/components/PatientsPage.js';
 import { EncountersPage } from '../../encounters/components/EncountersPage.js';
@@ -46,6 +48,14 @@ export function AuthenticatedDashboardPage({
 
     async function load(): Promise<void> {
       try {
+        if (requestedPath === '/dashboard') {
+          const staffResult = await getMyStaffProfile();
+          if (staffResult.profile) {
+            onNavigate('/staff/dashboard');
+            return;
+          }
+        }
+
         const [result, featureStates, canManageFeatures] = await Promise.all([
           getDashboard(),
           getTenantFeatures(),
@@ -219,6 +229,10 @@ export function AuthenticatedDashboardPage({
 
     if (requestedPath === '/tenant/departments') {
       return <DepartmentsPage onNavigate={onNavigate} />;
+    }
+
+    if (requestedPath === '/tenant/staff') {
+      return <StaffPage onNavigate={onNavigate} />;
     }
 
     if (requestedPath === '/tenant/services') {

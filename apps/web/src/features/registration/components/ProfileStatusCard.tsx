@@ -18,19 +18,14 @@ interface UpdateTenantOnboardingResponse {
     : never;
 }
 
-export function ProfileStatusCard({
-  profile,
-  onUpdated,
-}: ProfileStatusCardProps) {
+export function ProfileStatusCard({ profile, onUpdated }: ProfileStatusCardProps) {
   const isPatient = profile.type === 'PATIENT';
+  const isStaff = profile.type === 'STAFF';
 
-  const tenantData =
-    !isPatient && profile.data ? profile.data : null;
+  const tenantData = profile.type === 'TENANT' && profile.data ? profile.data : null;
 
   const [editing, setEditing] = useState(!profile.complete);
-  const [legalName, setLegalName] = useState(
-    tenantData?.legalName ?? '',
-  );
+  const [legalName, setLegalName] = useState(tenantData?.legalName ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,18 +46,15 @@ export function ProfileStatusCard({
     setError(null);
 
     try {
-      await apiRequest<UpdateTenantOnboardingResponse>(
-        '/v1/onboarding/tenant',
-        {
-          method: 'PATCH',
-          headers: {
-            'X-Registration-Token': token,
-          },
-          body: JSON.stringify({
-            legalName: legalName.trim(),
-          }),
+      await apiRequest<UpdateTenantOnboardingResponse>('/v1/onboarding/tenant', {
+        method: 'PATCH',
+        headers: {
+          'X-Registration-Token': token,
         },
-      );
+        body: JSON.stringify({
+          legalName: legalName.trim(),
+        }),
+      });
 
       setEditing(false);
       onUpdated();
@@ -87,11 +79,7 @@ export function ProfileStatusCard({
           </div>
 
           <span
-            className={`status-badge ${
-              profile.complete
-                ? 'status-success'
-                : 'status-pending'
-            }`}
+            className={`status-badge ${profile.complete ? 'status-success' : 'status-pending'}`}
           >
             {profile.complete ? 'Complete' : 'Incomplete'}
           </span>
@@ -111,15 +99,53 @@ export function ProfileStatusCard({
 
             <div>
               <span>Location</span>
-              <strong>
-                {profile.data.location ?? 'Not provided'}
-              </strong>
+              <strong>{profile.data.location ?? 'Not provided'}</strong>
             </div>
           </div>
         ) : (
-          <p className="empty-state">
-            Patient profile information is unavailable.
-          </p>
+          <p className="empty-state">Patient profile information is unavailable.</p>
+        )}
+      </section>
+    );
+  }
+
+  if (isStaff) {
+    return (
+      <section className="dashboard-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Profile</p>
+            <h2>Staff profile</h2>
+          </div>
+          <span
+            className={`status-badge ${profile.complete ? 'status-success' : 'status-pending'}`}
+          >
+            {profile.complete ? 'Complete' : 'Incomplete'}
+          </span>
+        </div>
+        {profile.data ? (
+          <div className="detail-grid">
+            <div>
+              <span>Name</span>
+              <strong>
+                {profile.data.firstName} {profile.data.lastName}
+              </strong>
+            </div>
+            <div>
+              <span>Work email</span>
+              <strong>{profile.data.email}</strong>
+            </div>
+            <div>
+              <span>Staff number</span>
+              <strong>{profile.data.staffNumber ?? 'Pending'}</strong>
+            </div>
+            <div>
+              <span>Job title</span>
+              <strong>{profile.data.jobTitle ?? 'Not provided'}</strong>
+            </div>
+          </div>
+        ) : (
+          <p className="empty-state">Staff profile information is unavailable.</p>
         )}
       </section>
     );
@@ -133,13 +159,7 @@ export function ProfileStatusCard({
           <h2>Organization profile</h2>
         </div>
 
-        <span
-          className={`status-badge ${
-            profile.complete
-              ? 'status-success'
-              : 'status-pending'
-          }`}
-        >
+        <span className={`status-badge ${profile.complete ? 'status-success' : 'status-pending'}`}>
           {profile.complete ? 'Complete' : 'Incomplete'}
         </span>
       </div>
@@ -170,9 +190,7 @@ export function ProfileStatusCard({
                 <input
                   type="text"
                   value={legalName}
-                  onChange={(event) =>
-                    setLegalName(event.target.value)
-                  }
+                  onChange={(event) => setLegalName(event.target.value)}
                   autoComplete="organization"
                   placeholder="Enter the registered legal name"
                   disabled={submitting}
@@ -192,9 +210,7 @@ export function ProfileStatusCard({
                   onClick={() => void saveTenantProfile()}
                   disabled={submitting}
                 >
-                  {submitting
-                    ? 'Saving profile...'
-                    : 'Save organization profile'}
+                  {submitting ? 'Saving profile...' : 'Save organization profile'}
                 </button>
               </div>
             </div>
@@ -202,9 +218,7 @@ export function ProfileStatusCard({
             <div className="detail-grid">
               <div>
                 <span>Legal name</span>
-                <strong>
-                  {tenantData.legalName ?? 'Not provided'}
-                </strong>
+                <strong>{tenantData.legalName ?? 'Not provided'}</strong>
               </div>
 
               <div className="form-actions">
@@ -224,19 +238,13 @@ export function ProfileStatusCard({
           )}
 
           {!profile.complete && !editing && (
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => setEditing(true)}
-            >
+            <button type="button" className="primary-button" onClick={() => setEditing(true)}>
               Complete profile
             </button>
           )}
         </>
       ) : (
-        <p className="empty-state">
-          Organization profile information is unavailable.
-        </p>
+        <p className="empty-state">Organization profile information is unavailable.</p>
       )}
     </section>
   );

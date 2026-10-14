@@ -12,8 +12,7 @@ import { setAuthSession } from '../../auth/api/auth-session.js';
 import { clearRegistrationToken } from '../api/registration-dashboard.api.js';
 
 export function RegistrationDashboardPage() {
-  const [dashboard, setDashboard] =
-    useState<RegistrationDashboardResponse | null>(null);
+  const [dashboard, setDashboard] = useState<RegistrationDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
@@ -59,11 +58,7 @@ export function RegistrationDashboardPage() {
           <p className="eyebrow">Registration dashboard</p>
           <h1>We could not load your registration</h1>
           <p>{error ?? 'No registration information is available.'}</p>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => void loadDashboard()}
-          >
+          <button type="button" className="primary-button" onClick={() => void loadDashboard()}>
             Try again
           </button>
         </div>
@@ -72,9 +67,7 @@ export function RegistrationDashboardPage() {
   }
 
   const verificationRequired = !dashboard.verification.complete;
-  const passwordRequired =
-    dashboard.steps.password.required &&
-    !dashboard.steps.password.complete;
+  const passwordRequired = dashboard.steps.password.required && !dashboard.steps.password.complete;
 
   const onboardingReady =
     dashboard.verification.complete &&
@@ -92,12 +85,16 @@ export function RegistrationDashboardPage() {
       setAuthSession(response.authentication);
       clearRegistrationToken();
 
-      window.location.assign('/patient/dashboard');
+      window.location.assign(
+        dashboard?.profile.type === 'STAFF'
+          ? '/staff/dashboard'
+          : dashboard?.profile.type === 'PATIENT'
+            ? '/patient/dashboard'
+            : '/dashboard',
+      );
     } catch (requestError) {
       setCompletionError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Unable to complete onboarding.',
+        requestError instanceof Error ? requestError.message : 'Unable to complete onboarding.',
       );
     } finally {
       setCompleting(false);
@@ -107,20 +104,16 @@ export function RegistrationDashboardPage() {
   return (
     <main className="dashboard-shell">
       <div className="dashboard-container">
-        <RegistrationHeader
-          registration={dashboard.registration}
-          account={dashboard.account}
-        />
+        <RegistrationHeader registration={dashboard.registration} account={dashboard.account} />
 
         <div className="dashboard-grid">
-          <RegistrationProgress
-            steps={dashboard.steps}
-            progress={dashboard.progress}
-          />
+          <RegistrationProgress steps={dashboard.steps} progress={dashboard.progress} />
 
           {verificationRequired && (
             <RegistrationVerification
               email={dashboard.verification.email.address}
+              emailChallengeId={dashboard.verification.email.challengeId ?? null}
+              emailChallengeExpiresAt={dashboard.verification.email.challengeExpiresAt ?? null}
               phone={dashboard.verification.phone.number}
               emailVerified={dashboard.verification.email.verified}
               phoneVerified={dashboard.verification.phone.verified}
@@ -128,20 +121,13 @@ export function RegistrationDashboardPage() {
             />
           )}
 
-          <VerificationStatusCard
-            verification={dashboard.verification}
-          />
+          <VerificationStatusCard verification={dashboard.verification} />
 
           {dashboard.verification.complete && passwordRequired && (
-            <RegistrationPasswordSetup
-              onConfigured={() => void loadDashboard()}
-            />
+            <RegistrationPasswordSetup onConfigured={() => void loadDashboard()} />
           )}
 
-          <ProfileStatusCard
-            profile={dashboard.profile}
-            onUpdated={() => void loadDashboard()}
-          />
+          <ProfileStatusCard profile={dashboard.profile} onUpdated={() => void loadDashboard()} />
 
           {onboardingReady && (
             <section className="dashboard-card onboarding-completion-card">
@@ -153,8 +139,8 @@ export function RegistrationDashboardPage() {
               </div>
 
               <p>
-                Your account verification, profile, and password setup are
-                complete. Finish onboarding to activate your registration.
+                Your account verification, profile, and password setup are complete. Finish
+                onboarding to activate your registration.
               </p>
 
               {completionError && (

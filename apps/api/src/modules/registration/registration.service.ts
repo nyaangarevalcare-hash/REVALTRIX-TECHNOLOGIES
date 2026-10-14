@@ -1,13 +1,14 @@
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
-  ConflictException,
-  Injectable,
-} from '@nestjs/common';
-import {
+  DepartmentCategory,
+  DepartmentType,
   IdentityType,
   RegistrationStatus,
   RegistrationType,
   VerificationStatus,
   OnboardingStatus,
+  Prisma,
+  RecordStatus,
   TenantType,
 } from '@prisma/client';
 import { randomBytes, createHash } from 'node:crypto';
@@ -92,6 +93,8 @@ export class RegistrationService {
         },
       });
 
+      await this.seedDefaultDepartments(tx, tenant.id, dto.tenantType);
+
       const membership = await tx.membership.create({
         data: {
           userId: user.id,
@@ -122,9 +125,7 @@ export class RegistrationService {
       });
 
       if (permissions.length === 0) {
-        throw new ConflictException(
-          'Authorization permission catalog is not configured',
-        );
+        throw new ConflictException('Authorization permission catalog is not configured');
       }
 
       await tx.membershipRole.create({
@@ -161,9 +162,7 @@ export class RegistrationService {
     });
 
     const registrationToken = randomBytes(32).toString('base64url');
-    const tokenHash = createHash('sha256')
-      .update(registrationToken)
-      .digest('hex');
+    const tokenHash = createHash('sha256').update(registrationToken).digest('hex');
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
@@ -185,6 +184,151 @@ export class RegistrationService {
       registrationToken,
       registrationTokenExpiresAt: expiresAt,
     };
+  }
+
+  private async seedDefaultDepartments(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    tenantType: TenantType,
+  ) {
+    const departmentTemplates: {
+      name: string;
+      code: string;
+      type: DepartmentType;
+      category: DepartmentCategory;
+      shortName: string;
+      description: string;
+    }[] = [
+      {
+        name: 'Reception',
+        code: 'RECEPTION',
+        type: DepartmentType.OPD,
+        category: DepartmentCategory.ADMINISTRATIVE,
+        shortName: 'REC',
+        description: 'Front desk and patient intake hub.',
+      },
+      {
+        name: 'Administration',
+        code: 'ADMIN',
+        type: DepartmentType.CUSTOM,
+        category: DepartmentCategory.ADMINISTRATIVE,
+        shortName: 'ADM',
+        description: 'Administrative coordination and operations.',
+      },
+      {
+        name: 'Outpatient Department',
+        code: 'OPD',
+        type: DepartmentType.OPD,
+        category: DepartmentCategory.CLINICAL,
+        shortName: 'OPD',
+        description: 'Primary consultations and outpatient clinical services.',
+      },
+      {
+        name: 'Nursing Unit',
+        code: 'NURSING',
+        type: DepartmentType.INPATIENT_WARD,
+        category: DepartmentCategory.CLINICAL,
+        shortName: 'NUR',
+        description: 'Ward-based patient care and continuity of service.',
+      },
+      {
+        name: 'Pharmacy',
+        code: 'PHARMACY',
+        type: DepartmentType.PHARMACY,
+        category: DepartmentCategory.CLINICAL_SUPPORT,
+        shortName: 'PHARM',
+        description: 'Medication management and dispensing support.',
+      },
+      {
+        name: 'Laboratory',
+        code: 'LAB',
+        type: DepartmentType.LABORATORY,
+        category: DepartmentCategory.DIAGNOSTICS,
+        shortName: 'LAB',
+        description: 'Diagnostics and test processing.',
+      },
+      {
+        name: 'Radiology',
+        code: 'RAD',
+        type: DepartmentType.RADIOLOGY,
+        category: DepartmentCategory.DIAGNOSTICS,
+        shortName: 'RAD',
+        description: 'Imaging and interpretation services.',
+      },
+      {
+        name: 'Billing & Finance',
+        code: 'BILLING',
+        type: DepartmentType.BILLING_FINANCE,
+        category: DepartmentCategory.ADMINISTRATIVE,
+        shortName: 'FIN',
+        description: 'Financial operations and revenue management.',
+      },
+      {
+        name: 'Housekeeping',
+        code: 'HOUSEKEEPING',
+        type: DepartmentType.HOUSEKEEPING_INFECTION_CONTROL,
+        category: DepartmentCategory.SUPPORT,
+        shortName: 'HK',
+        description: 'Environmental hygiene and safety support controls.',
+      },
+    ];
+
+    const filteredTemplates = departmentTemplates.filter((template) => {
+      if (
+        tenantType === 'PHARMACY' ||
+        tenantType === 'LABORATORY' ||
+        tenantType === 'RADIOLOGY_CENTER'
+      ) {
+        return template.code !== 'NURSING' && template.code !== 'RECEPTION';
+      }
+
+      return true;
+    });
+
+    const data: Prisma.DepartmentCreateManyInput[] = filteredTemplates.map((template) => ({
+      tenantId,
+      name: template.name,
+      code: template.code,
+      slug: template.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      type: template.type,
+      category: template.category,
+      shortName: template.shortName,
+      description: template.description,
+      status: RecordStatus.ACTIVE,
+      requiresDepartmentPassword: false,
+      autoGeneratedFeatures: {
+        type: template.type,
+        category: template.category,
+        enabledPages: ['Overview', 'Queue', 'Staff', 'Reports'],
+        modules: ['dashboard', 'staff', 'queue', 'reports'],
+        generatedBy: 'revaltrix-default-tenant-bootstrap',
+      },
+      dashboardConfig: {
+        layout: 'command-center',
+        widgets: ['overview', 'queue', 'staff', 'alerts'],
+        refreshIntervalSeconds: 20,
+      },
+      sidebarConfig: {
+        groups: [{ label: 'Core', items: ['Overview', 'Queue', 'Staff', 'Reports'] }],
+      },
+      workflowConfig: {
+        stages: ['Intake', 'Process', 'Review', 'Close'],
+      },
+      settings: {
+        departmentType: template.type,
+        category: template.category,
+        requiresDepartmentPassword: false,
+      },
+    }));
+
+    if (data.length === 0) {
+      return;
+    }
+
+    await tx.department.createMany({
+      data,
+      skipDuplicates: true,
+    });
   }
 
   async registerPatient(dto: RegisterPatientDto) {
@@ -270,9 +414,7 @@ export class RegistrationService {
     });
 
     const registrationToken = randomBytes(32).toString('base64url');
-    const tokenHash = createHash('sha256')
-      .update(registrationToken)
-      .digest('hex');
+    const tokenHash = createHash('sha256').update(registrationToken).digest('hex');
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
@@ -300,16 +442,15 @@ export class RegistrationService {
   }
 
   private async generateTenantCode(
-    tx: Parameters<
-      Parameters<typeof this.database.client.$transaction>[0]
-    >[0],
+    tx: Parameters<Parameters<typeof this.database.client.$transaction>[0]>[0],
     businessName: string,
   ): Promise<string> {
-    const base = businessName
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, '')
-      .slice(0, 12) || 'TENANT';
+    const base =
+      businessName
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '')
+        .slice(0, 12) || 'TENANT';
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const suffix = randomBytes(3).toString('hex').toUpperCase();
@@ -325,8 +466,6 @@ export class RegistrationService {
       }
     }
 
-    throw new ConflictException(
-      'Unable to generate a unique tenant code',
-    );
+    throw new ConflictException('Unable to generate a unique tenant code');
   }
 }

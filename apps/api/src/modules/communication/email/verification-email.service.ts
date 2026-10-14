@@ -9,15 +9,8 @@ export class VerificationEmailService {
     private readonly config: ConfigService,
   ) {}
 
-  async sendRegistrationVerification(
-    email: string,
-    code: string,
-    expiresAt: Date,
-  ): Promise<void> {
-    const expiresInMinutes = Math.max(
-      1,
-      Math.ceil((expiresAt.getTime() - Date.now()) / 60000),
-    );
+  async sendRegistrationVerification(email: string, code: string, expiresAt: Date): Promise<void> {
+    const expiresInMinutes = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 60000));
 
     await this.emailService.send({
       to: email,
@@ -93,15 +86,52 @@ export class VerificationEmailService {
     });
   }
 
-  async sendFamilyAccessStepUp(
+  async sendStaffVerification(
     email: string,
     code: string,
+    registrationToken: string,
     expiresAt: Date,
   ): Promise<void> {
-    const expiresInMinutes = Math.max(
-      1,
-      Math.ceil((expiresAt.getTime() - Date.now()) / 60000),
-    );
+    const webAppUrl = this.config.getOrThrow<string>('app.webAppUrl').replace(/\/+$/, '');
+    const verificationUrl =
+      `${webAppUrl}/register/tenant/dashboard` +
+      `#registration_token=${encodeURIComponent(registrationToken)}`;
+    const expiresInMinutes = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 60000));
+
+    await this.emailService.send({
+      to: email,
+      subject: 'Verify your Revaltrix staff account',
+      text: [
+        'A Revaltrix organization invited you to its staff workspace.',
+        '',
+        `Your email verification code is ${code}.`,
+        `The code expires in ${expiresInMinutes} minutes.`,
+        '',
+        `Open the secure verification page: ${verificationUrl}`,
+        '',
+        'After verification, Revaltrix will email you a separate link to create your password.',
+        'If you did not expect this invitation, contact your organization administrator.',
+      ].join('\n'),
+      html: `
+        <!doctype html>
+        <html lang="en">
+          <body style="font-family:Arial,Helvetica,sans-serif;color:#202124">
+            <h1>Verify your Revaltrix staff account</h1>
+            <p>A Revaltrix organization invited you to its staff workspace.</p>
+            <p>Your email verification code is:</p>
+            <p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p>
+            <p>This code expires in ${expiresInMinutes} minutes.</p>
+            <p><a href="${verificationUrl}">Open the secure verification page</a></p>
+            <p>After verification, we will email you a separate link to create your password.</p>
+            <p>If you did not expect this invitation, contact your organization administrator.</p>
+          </body>
+        </html>
+      `,
+    });
+  }
+
+  async sendFamilyAccessStepUp(email: string, code: string, expiresAt: Date): Promise<void> {
+    const expiresInMinutes = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 60000));
     await this.emailService.send({
       to: email,
       subject: `${code} is your Revaltrix security code`,
@@ -133,18 +163,13 @@ export class VerificationEmailService {
     registrationToken: string,
     expiresAt: Date,
   ): Promise<void> {
-    const webAppUrl = this.config
-      .getOrThrow<string>('app.webAppUrl')
-      .replace(/\/+$/, '');
+    const webAppUrl = this.config.getOrThrow<string>('app.webAppUrl').replace(/\/+$/, '');
 
     const onboardingUrl =
       `${webAppUrl}/register/patient/onboarding` +
       `#registration_token=${encodeURIComponent(registrationToken)}`;
 
-    const expiresInMinutes = Math.max(
-      1,
-      Math.ceil((expiresAt.getTime() - Date.now()) / 60000),
-    );
+    const expiresInMinutes = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 60000));
 
     await this.emailService.send({
       to: email,
@@ -203,4 +228,45 @@ export class VerificationEmailService {
     });
   }
 
+  async sendStaffPasswordSetup(
+    email: string,
+    registrationToken: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    const webAppUrl = this.config.getOrThrow<string>('app.webAppUrl').replace(/\/+$/, '');
+    const setupUrl =
+      `${webAppUrl}/register/tenant/dashboard` +
+      `#registration_token=${encodeURIComponent(registrationToken)}`;
+    const expiresInMinutes = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 60000));
+
+    await this.emailService.send({
+      to: email,
+      subject: 'Set up your Revaltrix staff account',
+      text: [
+        'Your email address has been verified.',
+        '',
+        'Use this secure link to create your password and activate your staff account:',
+        setupUrl,
+        '',
+        `This link expires in ${expiresInMinutes} minutes.`,
+        'If you did not expect this invitation, contact your organization administrator.',
+      ].join('\n'),
+      html: `
+        <!doctype html>
+        <html lang="en">
+          <body style="font-family:Arial,Helvetica,sans-serif;color:#202124">
+            <h1>Your staff account is verified</h1>
+            <p>Create a password to activate your Revaltrix staff account.</p>
+            <p>
+              <a href="${setupUrl}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;">
+                Set up your password
+              </a>
+            </p>
+            <p>This secure link expires in ${expiresInMinutes} minutes.</p>
+            <p>If you did not expect this invitation, contact your organization administrator.</p>
+          </body>
+        </html>
+      `,
+    });
+  }
 }

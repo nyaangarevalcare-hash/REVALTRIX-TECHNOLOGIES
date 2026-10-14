@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service.js';
 import { AuthenticationService } from '../core/authentication/authentication.service.js';
 
@@ -24,58 +20,41 @@ export class OnboardingService {
       description?: string;
     },
   ) {
-    const registration =
-      await this.database.client.registration.findFirst({
-        where: {
-          userId,
-          type: 'TENANT',
-          status: {
-            in: ['VERIFICATION_REQUIRED', 'ONBOARDING'],
-          },
+    const registration = await this.database.client.registration.findFirst({
+      where: {
+        userId,
+        type: 'TENANT',
+        status: {
+          in: ['VERIFICATION_REQUIRED', 'ONBOARDING'],
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          tenantId: true,
-        },
-      });
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        tenantId: true,
+      },
+    });
 
     if (!registration?.tenantId) {
-      throw new NotFoundException(
-        'Tenant registration was not found',
-      );
+      throw new NotFoundException('Tenant registration was not found');
     }
 
     const tenantData = {
-      ...(input.legalName !== undefined
-        ? { legalName: input.legalName.trim() }
-        : {}),
-      ...(input.businessName !== undefined
-        ? { name: input.businessName.trim() }
-        : {}),
+      ...(input.legalName !== undefined ? { legalName: input.legalName.trim() } : {}),
+      ...(input.businessName !== undefined ? { name: input.businessName.trim() } : {}),
     };
 
     const profileData = {
-      ...(input.legalName !== undefined
-        ? { legalName: input.legalName.trim() }
-        : {}),
-      ...(input.businessName !== undefined
-        ? { businessName: input.businessName.trim() }
-        : {}),
+      ...(input.legalName !== undefined ? { legalName: input.legalName.trim() } : {}),
+      ...(input.businessName !== undefined ? { businessName: input.businessName.trim() } : {}),
       ...(input.contactEmail !== undefined
         ? { contactEmail: input.contactEmail.trim().toLowerCase() }
         : {}),
-      ...(input.contactPhone !== undefined
-        ? { contactPhone: input.contactPhone.trim() }
-        : {}),
-      ...(input.website !== undefined
-        ? { website: input.website.trim() }
-        : {}),
-      ...(input.description !== undefined
-        ? { description: input.description.trim() }
-        : {}),
+      ...(input.contactPhone !== undefined ? { contactPhone: input.contactPhone.trim() } : {}),
+      ...(input.website !== undefined ? { website: input.website.trim() } : {}),
+      ...(input.description !== undefined ? { description: input.description.trim() } : {}),
     };
 
     await this.database.client.$transaction(async (tx) => {
@@ -124,83 +103,66 @@ export class OnboardingService {
       location?: string;
     },
   ) {
-    const registration =
-      await this.database.client.registration.findFirst({
-        where: {
-          userId,
-          type: 'PATIENT',
-          status: {
-            in: ['VERIFICATION_REQUIRED', 'ONBOARDING'],
-          },
+    const registration = await this.database.client.registration.findFirst({
+      where: {
+        userId,
+        type: 'PATIENT',
+        status: {
+          in: ['VERIFICATION_REQUIRED', 'ONBOARDING'],
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          userId: true,
-        },
-      });
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        userId: true,
+      },
+    });
 
     if (!registration) {
-      throw new NotFoundException(
-        'Patient registration was not found',
-      );
+      throw new NotFoundException('Patient registration was not found');
     }
 
-    const existingProfile =
-      await this.database.client.patientProfile.findUnique({
-        where: {
-          userId,
-        },
-        select: {
-          id: true,
-        },
-      });
+    const existingProfile = await this.database.client.patientProfile.findUnique({
+      where: {
+        userId,
+      },
+      select: {
+        id: true,
+      },
+    });
 
     if (!existingProfile) {
-      throw new NotFoundException(
-        'Patient profile was not found',
-      );
+      throw new NotFoundException('Patient profile was not found');
     }
 
-    const firstName =
-      input.firstName !== undefined
-        ? input.firstName.trim()
-        : undefined;
+    const firstName = input.firstName !== undefined ? input.firstName.trim() : undefined;
 
-    const secondName =
-      input.secondName !== undefined
-        ? input.secondName.trim()
-        : undefined;
+    const secondName = input.secondName !== undefined ? input.secondName.trim() : undefined;
 
-    const location =
-      input.location !== undefined
-        ? input.location.trim()
-        : undefined;
+    const location = input.location !== undefined ? input.location.trim() : undefined;
 
-    const profile =
-      await this.database.client.patientProfile.update({
-        where: {
-          userId,
-        },
-        data: {
-          ...(firstName !== undefined ? { firstName } : {}),
-          ...(secondName !== undefined ? { secondName } : {}),
-          ...(location !== undefined ? { location } : {}),
-        },
-      });
+    const profile = await this.database.client.patientProfile.update({
+      where: {
+        userId,
+      },
+      data: {
+        ...(firstName !== undefined ? { firstName } : {}),
+        ...(secondName !== undefined ? { secondName } : {}),
+        ...(location !== undefined ? { location } : {}),
+      },
+    });
 
-    const currentProfile =
-      await this.database.client.patientProfile.findUnique({
-        where: {
-          userId,
-        },
-        select: {
-          firstName: true,
-          secondName: true,
-        },
-      });
+    const currentProfile = await this.database.client.patientProfile.findUnique({
+      where: {
+        userId,
+      },
+      select: {
+        firstName: true,
+        secondName: true,
+      },
+    });
 
     if (currentProfile) {
       await this.database.client.user.update({
@@ -208,8 +170,7 @@ export class OnboardingService {
           id: userId,
         },
         data: {
-          displayName:
-            `${currentProfile.firstName} ${currentProfile.secondName}`.trim(),
+          displayName: `${currentProfile.firstName} ${currentProfile.secondName}`.trim(),
         },
       });
     }
@@ -230,34 +191,28 @@ export class OnboardingService {
     };
   }
 
-  async completeOnboarding(
-    userId: string,
-    registrationSessionId: string,
-  ) {
-    const registration =
-      await this.database.client.registration.findFirst({
-        where: {
-          userId,
-          status: {
-            in: ['VERIFICATION_REQUIRED', 'ONBOARDING'],
-          },
+  async completeOnboarding(userId: string, registrationSessionId: string) {
+    const registration = await this.database.client.registration.findFirst({
+      where: {
+        userId,
+        status: {
+          in: ['VERIFICATION_REQUIRED', 'ONBOARDING'],
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          type: true,
-          verificationStatus: true,
-          onboardingStatus: true,
-          tenantId: true,
-        },
-      });
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        type: true,
+        verificationStatus: true,
+        onboardingStatus: true,
+        tenantId: true,
+      },
+    });
 
     if (!registration) {
-      throw new NotFoundException(
-        'Active registration was not found',
-      );
+      throw new NotFoundException('Active registration was not found');
     }
 
     if (registration.verificationStatus !== 'VERIFIED') {
@@ -266,18 +221,17 @@ export class OnboardingService {
       );
     }
 
-    const emailIdentity =
-      await this.database.client.identity.findFirst({
-        where: {
-          userId,
-          type: 'EMAIL',
-          status: 'ACTIVE',
-        },
-        select: {
-          verifiedAt: true,
-          credentialHash: true,
-        },
-      });
+    const emailIdentity = await this.database.client.identity.findFirst({
+      where: {
+        userId,
+        type: 'EMAIL',
+        status: 'ACTIVE',
+      },
+      select: {
+        verifiedAt: true,
+        credentialHash: true,
+      },
+    });
 
     if (!emailIdentity?.verifiedAt) {
       throw new ConflictException(
@@ -292,23 +246,18 @@ export class OnboardingService {
     }
 
     if (registration.type === 'PATIENT') {
-      const profile =
-        await this.database.client.patientProfile.findUnique({
-          where: {
-            userId,
-          },
-          select: {
-            firstName: true,
-            secondName: true,
-            location: true,
-          },
-        });
+      const profile = await this.database.client.patientProfile.findUnique({
+        where: {
+          userId,
+        },
+        select: {
+          firstName: true,
+          secondName: true,
+          location: true,
+        },
+      });
 
-      if (
-        !profile?.firstName?.trim() ||
-        !profile.secondName?.trim() ||
-        !profile.location?.trim()
-      ) {
+      if (!profile?.firstName?.trim() || !profile.secondName?.trim() || !profile.location?.trim()) {
         throw new ConflictException(
           'Patient profile must be completed before onboarding can be completed',
         );
@@ -316,61 +265,60 @@ export class OnboardingService {
     }
 
     if (registration.type === 'TENANT') {
-      const tenant = registration.tenantId
-        ? await this.database.client.tenant.findUnique({
+      const staffProfile = registration.tenantId
+        ? await this.database.client.staffProfile.findFirst({
             where: {
-              id: registration.tenantId,
+              userId,
+              tenantId: registration.tenantId,
+              status: 'ACTIVE',
             },
-            select: {
-              name: true,
-              legalName: true,
-            },
+            select: { id: true },
           })
         : null;
 
-      if (!tenant?.name?.trim() || !tenant.legalName?.trim()) {
-        throw new ConflictException(
-          'Organization profile must be completed before onboarding can be completed',
-        );
+      if (!staffProfile) {
+        const tenant = registration.tenantId
+          ? await this.database.client.tenant.findUnique({
+              where: {
+                id: registration.tenantId,
+              },
+              select: {
+                name: true,
+                legalName: true,
+              },
+            })
+          : null;
+
+        if (!tenant?.name?.trim() || !tenant.legalName?.trim()) {
+          throw new ConflictException(
+            'Organization profile must be completed before onboarding can be completed',
+          );
+        }
       }
     }
 
     return this.database.client.$transaction(async (transaction) => {
-      const current =
-        await transaction.registration.findUnique({
-          where: {
-            id: registration.id,
-          },
-          select: {
-            status: true,
-            verificationStatus: true,
-            onboardingStatus: true,
-          },
-        });
+      const current = await transaction.registration.findUnique({
+        where: {
+          id: registration.id,
+        },
+        select: {
+          status: true,
+          verificationStatus: true,
+          onboardingStatus: true,
+        },
+      });
 
       if (!current) {
-        throw new NotFoundException(
-          'Registration was not found',
-        );
+        throw new NotFoundException('Registration was not found');
       }
 
-      if (
-        current.status === 'COMPLETED' &&
-        current.onboardingStatus === 'COMPLETED'
-      ) {
-        throw new ConflictException(
-          'Registration has already been completed',
-        );
+      if (current.status === 'COMPLETED' && current.onboardingStatus === 'COMPLETED') {
+        throw new ConflictException('Registration has already been completed');
       }
 
-      if (
-        !['VERIFICATION_REQUIRED', 'ONBOARDING'].includes(
-          current.status,
-        )
-      ) {
-        throw new ConflictException(
-          'Registration is no longer eligible for onboarding completion',
-        );
+      if (!['VERIFICATION_REQUIRED', 'ONBOARDING'].includes(current.status)) {
+        throw new ConflictException('Registration is no longer eligible for onboarding completion');
       }
 
       if (current.verificationStatus !== 'VERIFIED') {
@@ -379,18 +327,17 @@ export class OnboardingService {
         );
       }
 
-      const registrationSession =
-        await transaction.registrationSession.findUnique({
-          where: {
-            id: registrationSessionId,
-          },
-          select: {
-            id: true,
-            userId: true,
-            expiresAt: true,
-            consumedAt: true,
-          },
-        });
+      const registrationSession = await transaction.registrationSession.findUnique({
+        where: {
+          id: registrationSessionId,
+        },
+        select: {
+          id: true,
+          userId: true,
+          expiresAt: true,
+          consumedAt: true,
+        },
+      });
 
       if (
         !registrationSession ||
@@ -398,16 +345,13 @@ export class OnboardingService {
         registrationSession.consumedAt !== null ||
         registrationSession.expiresAt <= new Date()
       ) {
-        throw new ConflictException(
-          'Registration session is invalid or expired',
-        );
+        throw new ConflictException('Registration session is invalid or expired');
       }
 
-      const authenticatedSession =
-        await this.authenticationService.createAuthenticatedSession(
-          transaction,
-          userId,
-        );
+      const authenticatedSession = await this.authenticationService.createAuthenticatedSession(
+        transaction,
+        userId,
+      );
 
       await transaction.registration.update({
         where: {
@@ -420,22 +364,19 @@ export class OnboardingService {
         },
       });
 
-      const consumed =
-        await transaction.registrationSession.updateMany({
-          where: {
-            id: registrationSessionId,
-            userId,
-            consumedAt: null,
-          },
-          data: {
-            consumedAt: new Date(),
-          },
-        });
+      const consumed = await transaction.registrationSession.updateMany({
+        where: {
+          id: registrationSessionId,
+          userId,
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: new Date(),
+        },
+      });
 
       if (consumed.count !== 1) {
-        throw new ConflictException(
-          'Registration session has already been consumed',
-        );
+        throw new ConflictException('Registration session has already been consumed');
       }
 
       return {
@@ -454,29 +395,23 @@ export class OnboardingService {
     });
   }
 
-  private async getCompletedOnboarding(
-    userId: string,
-    registrationId: string,
-  ) {
-    const registration =
-      await this.database.client.registration.findUnique({
-        where: {
-          id: registrationId,
-        },
-        select: {
-          id: true,
-          type: true,
-          status: true,
-          verificationStatus: true,
-          onboardingStatus: true,
-          completedAt: true,
-        },
-      });
+  private async getCompletedOnboarding(userId: string, registrationId: string) {
+    const registration = await this.database.client.registration.findUnique({
+      where: {
+        id: registrationId,
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        verificationStatus: true,
+        onboardingStatus: true,
+        completedAt: true,
+      },
+    });
 
     if (!registration) {
-      throw new NotFoundException(
-        'Completed registration was not found',
-      );
+      throw new NotFoundException('Completed registration was not found');
     }
 
     return {
@@ -488,85 +423,83 @@ export class OnboardingService {
   }
 
   async getMyOnboarding(userId: string) {
-    const registration =
-      await this.database.client.registration.findFirst({
-        where: {
-          userId,
-          status: {
-            in: ['INITIATED', 'VERIFICATION_REQUIRED', 'ONBOARDING'],
+    const registration = await this.database.client.registration.findFirst({
+      where: {
+        userId,
+        status: {
+          in: ['INITIATED', 'VERIFICATION_REQUIRED', 'ONBOARDING'],
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        verificationStatus: true,
+        onboardingStatus: true,
+        completedAt: true,
+        expiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+        tenant: {
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            legalName: true,
+            code: true,
+            status: true,
           },
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          type: true,
-          status: true,
-          verificationStatus: true,
-          onboardingStatus: true,
-          completedAt: true,
-          expiresAt: true,
-          createdAt: true,
-          updatedAt: true,
-          tenant: {
-            select: {
-              id: true,
-              type: true,
-              name: true,
-              legalName: true,
-              code: true,
-              status: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            status: true,
+            identities: {
+              select: {
+                id: true,
+                type: true,
+                value: true,
+                normalizedValue: true,
+                verifiedAt: true,
+                status: true,
+              },
             },
-          },
-          user: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              status: true,
-              identities: {
-                select: {
-                  id: true,
-                  type: true,
-                  value: true,
-                  normalizedValue: true,
-                  verifiedAt: true,
-                  status: true,
-                },
+            patientProfile: {
+              select: {
+                id: true,
+                firstName: true,
+                secondName: true,
+                location: true,
+                createdAt: true,
+                updatedAt: true,
               },
-              patientProfile: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  secondName: true,
-                  location: true,
-                  createdAt: true,
-                  updatedAt: true,
-                },
+            },
+            memberships: {
+              where: {
+                status: 'ACTIVE',
               },
-              memberships: {
-                where: {
-                  status: 'ACTIVE',
-                },
-                select: {
-                  id: true,
-                  tenantId: true,
-                  branchId: true,
-                  departmentId: true,
-                  status: true,
-                  startsAt: true,
-                  endsAt: true,
-                  roles: {
-                    select: {
-                      role: {
-                        select: {
-                          id: true,
-                          name: true,
-                          code: true,
-                          scope: true,
-                          status: true,
-                        },
+              select: {
+                id: true,
+                tenantId: true,
+                branchId: true,
+                departmentId: true,
+                status: true,
+                startsAt: true,
+                endsAt: true,
+                roles: {
+                  select: {
+                    role: {
+                      select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        scope: true,
+                        status: true,
                       },
                     },
                   },
@@ -575,12 +508,11 @@ export class OnboardingService {
             },
           },
         },
-      });
+      },
+    });
 
     if (!registration) {
-      throw new NotFoundException(
-        'Active registration was not found',
-      );
+      throw new NotFoundException('Active registration was not found');
     }
 
     return {

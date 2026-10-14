@@ -8,16 +8,17 @@ import { TenantRegistrationPage } from './features/registration/pages/TenantRegi
 import {
   getRegistrationDashboard,
   getRegistrationToken,
+  setRegistrationToken,
 } from './features/registration/api/registration-dashboard.api.js';
-import {
-  getAuthSession,
-  clearAuthSession,
-} from './features/auth/api/auth-session.js';
+import { getAuthSession, clearAuthSession } from './features/auth/api/auth-session.js';
 import { AuthenticatedDashboardPage } from './features/dashboard/pages/AuthenticatedDashboardPage.js';
 import { PatientDashboardPage } from './features/patient-dashboard/pages/PatientDashboardPage.js';
 import { PatientProfilePage } from './features/patient-profile/pages/PatientProfilePage.js';
 import { PatientFamilyPage } from './features/patient-family/pages/PatientFamilyPage.js';
 import { FamilyVerificationReviewPage } from './features/patient-family/pages/FamilyVerificationReviewPage.js';
+import { StaffDashboardPage } from './features/staff/pages/StaffDashboardPage.js';
+import { DepartmentWorkspacePage } from './features/staff/pages/DepartmentWorkspacePage.js';
+import { getMyStaffProfile } from './features/staff/api/staff.api.js';
 import './styles.css';
 
 type Route =
@@ -31,6 +32,8 @@ type Route =
   | { name: 'patient-profile' }
   | { name: 'patient-family' }
   | { name: 'family-verification-review' }
+  | { name: 'staff-dashboard' }
+  | { name: 'staff-department'; departmentId?: string }
   | { name: 'login' };
 
 function getRoute(): Route {
@@ -48,10 +51,7 @@ function getRoute(): Route {
     return { name: 'patient-onboarding' };
   }
 
-  if (
-    path === '/register/patient/dashboard' ||
-    path === '/register/tenant/dashboard'
-  ) {
+  if (path === '/register/patient/dashboard' || path === '/register/tenant/dashboard') {
     return { name: 'registration-dashboard' };
   }
 
@@ -71,10 +71,16 @@ function getRoute(): Route {
     return { name: 'patient-dashboard' };
   }
 
-  if (
-    path === '/dashboard' ||
-    path.startsWith('/tenant/')
-  ) {
+  if (path === '/staff/dashboard') {
+    return { name: 'staff-dashboard' };
+  }
+
+  if (path === '/staff/department') {
+    const params = new URLSearchParams(window.location.search);
+    return { name: 'staff-department', departmentId: params.get('department') ?? undefined };
+  }
+
+  if (path === '/dashboard' || path.startsWith('/tenant/')) {
     return {
       name: 'authenticated-dashboard',
       path,
@@ -100,8 +106,20 @@ function navigate(path: string): void {
 function App() {
   const [route, setRoute] = useState<Route>(getRoute);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [accountResolutionError, setAccountResolutionError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (route.name === 'registration-dashboard') {
+      const hash = window.location.hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      const registrationToken = params.get('registration_token');
+      if (registrationToken?.trim()) {
+        setRegistrationToken(registrationToken.trim());
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+      return;
+    }
+
     if (route.name !== 'patient-onboarding') {
       return;
     }
@@ -111,30 +129,18 @@ function App() {
     const registrationToken = params.get('registration_token');
 
     if (registrationToken?.trim()) {
-      window.sessionStorage.setItem(
-        'revaltrix_registration_token',
-        registrationToken.trim(),
-      );
+      window.sessionStorage.setItem('revaltrix_registration_token', registrationToken.trim());
 
-      window.history.replaceState(
-        {},
-        '',
-        '/register/patient/dashboard',
-      );
+      window.history.replaceState({}, '', '/register/patient/dashboard');
 
       setRoute({ name: 'registration-dashboard' });
       return;
     }
 
-    const existingToken =
-      window.sessionStorage.getItem('revaltrix_registration_token');
+    const existingToken = window.sessionStorage.getItem('revaltrix_registration_token');
 
     if (existingToken) {
-      window.history.replaceState(
-        {},
-        '',
-        '/register/patient/dashboard',
-      );
+      window.history.replaceState({}, '', '/register/patient/dashboard');
 
       setRoute({ name: 'registration-dashboard' });
       return;
@@ -163,14 +169,31 @@ function App() {
       const authSession = getAuthSession();
 
       if (authSession) {
-        if (!cancelled) {
-          setCheckingSession(false);
-
-          if (route.name === 'start' || route.name === 'login') {
-            navigate('/dashboard');
+        if (route.name === 'start' || route.name === 'login') {
+          try {
+            const result = await getMyStaffProfile();
+            if (!cancelled) {
+              navigate(result.profile ? '/staff/dashboard' : '/dashboard');
+            }
+          } catch (requestError) {
+            if (!cancelled) {
+              setAccountResolutionError(
+                requestError instanceof Error
+                  ? requestError.message
+                  : 'Unable to determine your account workspace.',
+              );
+            }
+          } finally {
+            if (!cancelled) {
+              setCheckingSession(false);
+            }
           }
+          return;
         }
 
+        if (!cancelled) {
+          setCheckingSession(false);
+        }
         return;
       }
 
@@ -196,8 +219,7 @@ function App() {
             ? '/register/patient/dashboard'
             : '/register/tenant/dashboard';
 
-        const currentPath =
-          window.location.pathname.replace(/\/+$/, '') || '/';
+        const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
 
         if (
           currentPath === '/' ||
@@ -225,6 +247,23 @@ function App() {
     };
   }, [route.name]);
 
+  async function navigateAfterLogin(): Promise<void> {
+    setCheckingSession(true);
+    setAccountResolutionError(null);
+    try {
+      const result = await getMyStaffProfile();
+      navigate(result.profile ? '/staff/dashboard' : '/dashboard');
+    } catch (requestError) {
+      setAccountResolutionError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to determine your account workspace.',
+      );
+    } finally {
+      setCheckingSession(false);
+    }
+  }
+
   if (checkingSession) {
     return (
       <main className="registration-loading">
@@ -233,13 +272,30 @@ function App() {
     );
   }
 
-  if (route.name === 'authenticated-dashboard') {
+  if (accountResolutionError) {
     return (
-      <AuthenticatedDashboardPage
-        requestedPath={route.path}
-        onNavigate={navigate}
-      />
+      <main className="registration-loading">
+        <h1>Account workspace unavailable</h1>
+        <p role="alert">{accountResolutionError}</p>
+        <button type="button" onClick={() => void navigateAfterLogin()}>
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            clearAuthSession();
+            setAccountResolutionError(null);
+            navigate('/login');
+          }}
+        >
+          Sign out
+        </button>
+      </main>
     );
+  }
+
+  if (route.name === 'authenticated-dashboard') {
+    return <AuthenticatedDashboardPage requestedPath={route.path} onNavigate={navigate} />;
   }
 
   if (route.name === 'patient-dashboard') {
@@ -269,6 +325,31 @@ function App() {
   if (route.name === 'patient-family') {
     return (
       <PatientFamilyPage
+        onNavigate={navigate}
+        onLogout={() => {
+          clearAuthSession();
+          navigate('/login');
+        }}
+      />
+    );
+  }
+
+  if (route.name === 'staff-dashboard') {
+    return (
+      <StaffDashboardPage
+        onNavigate={navigate}
+        onLogout={() => {
+          clearAuthSession();
+          navigate('/login');
+        }}
+      />
+    );
+  }
+
+  if (route.name === 'staff-department') {
+    return (
+      <DepartmentWorkspacePage
+        departmentId={route.departmentId}
         onNavigate={navigate}
         onLogout={() => {
           clearAuthSession();
@@ -321,11 +402,7 @@ function App() {
   }
 
   if (route.name === 'login') {
-    return (
-      <LoginPage
-        onSuccess={() => navigate('/dashboard')}
-      />
-    );
+    return <LoginPage onSuccess={() => void navigateAfterLogin()} />;
   }
 
   return (

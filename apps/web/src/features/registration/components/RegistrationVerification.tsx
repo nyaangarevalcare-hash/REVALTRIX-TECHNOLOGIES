@@ -7,6 +7,8 @@ import {
 
 interface RegistrationVerificationProps {
   email: string | null;
+  emailChallengeId?: string | null;
+  emailChallengeExpiresAt?: string | null;
   phone: string | null;
   emailVerified: boolean;
   phoneVerified: boolean;
@@ -15,22 +17,27 @@ interface RegistrationVerificationProps {
 
 export function RegistrationVerification({
   email,
+  emailChallengeId = null,
+  emailChallengeExpiresAt = null,
   phone,
   emailVerified,
   phoneVerified,
   onVerified,
 }: RegistrationVerificationProps) {
   const [channel, setChannel] = useState<VerificationChannel>('EMAIL');
-  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [challengeId, setChallengeId] = useState<string | null>(
+    channel === 'EMAIL' ? emailChallengeId : null,
+  );
   const [code, setCode] = useState('');
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(
+    channel === 'EMAIL' ? emailChallengeExpiresAt : null,
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  const alreadyVerified =
-    channel === 'EMAIL' ? emailVerified : phoneVerified;
+  const alreadyVerified = channel === 'EMAIL' ? emailVerified : phoneVerified;
 
   async function requestCode(): Promise<void> {
     setError(null);
@@ -109,6 +116,7 @@ export function RegistrationVerification({
         <button
           type="button"
           className={channel === 'PHONE' ? 'channel-active' : ''}
+          disabled={!phone}
           onClick={() => {
             setChannel('PHONE');
             setChallengeId(null);
@@ -121,29 +129,20 @@ export function RegistrationVerification({
       </div>
 
       <div className="verification-target">
-        <span>
-          {channel === 'EMAIL' ? 'Email address' : 'Phone number'}
-        </span>
+        <span>{channel === 'EMAIL' ? 'Email address' : 'Phone number'}</span>
 
         <strong>
-          {channel === 'EMAIL'
-            ? email ?? 'No email address'
-            : phone ?? 'No phone number'}
+          {channel === 'EMAIL' ? (email ?? 'No email address') : (phone ?? 'No phone number')}
         </strong>
       </div>
 
       {alreadyVerified ? (
-        <div className="verification-complete">
-          This contact method is already verified.
-        </div>
+        <div className="verification-complete">This contact method is already verified.</div>
       ) : !challengeId ? (
         <button
           type="button"
           className="primary-button"
-          disabled={
-            requesting ||
-            (channel === 'EMAIL' ? !email : !phone)
-          }
+          disabled={requesting || (channel === 'EMAIL' ? !email : !phone)}
           onClick={() => void requestCode()}
         >
           {requesting ? 'Sending code...' : 'Send verification code'}
@@ -158,9 +157,7 @@ export function RegistrationVerification({
               maxLength={6}
               pattern="[0-9]{6}"
               value={code}
-              onChange={(event) =>
-                setCode(event.target.value.replace(/\D/g, ''))
-              }
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
               placeholder="000000"
             />
           </label>

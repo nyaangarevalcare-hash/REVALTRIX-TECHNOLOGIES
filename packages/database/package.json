@@ -8,7 +8,7 @@
     ".": "./index.ts"
   },
   "scripts": {
-    "generate": "prisma generate",
+    "generate": "prisma generate && node ./sync-api-client.mjs",
     "format": "prisma format",
     "validate": "prisma validate",
     "migrate:dev": "prisma migrate dev",
