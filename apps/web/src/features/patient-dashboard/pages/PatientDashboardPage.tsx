@@ -9,6 +9,9 @@ import {
   FlaskConical,
   KeyRound,
   Pill,
+  Eye,
+  Search,
+  X,
   ShieldCheck,
   UserRound,
   UsersRound,
@@ -20,6 +23,7 @@ import {
   getMyPatientDashboard,
   getMyPatientJourney,
   getMyCareHistory,
+  viewMyCareAttachment,
 } from '../api/patient-dashboard.api.js';
 import {
   acknowledgeMyQueueCall,
@@ -36,7 +40,10 @@ import { NotificationInboxPanel } from '../../notifications/components/Notificat
 import { enableNotificationSound, playNotificationSound } from '../../notifications/utils/notification-sound.js';
 import type {
   PatientDashboardResponse,
+  PatientJourney,
   PatientJourneyResponse,
+  CareHistoryAttachment,
+  CareHistoryItem,
   CareHistoryResponse,
   PatientRelationshipRequest,
 } from '../types/patient-dashboard.types.js';
@@ -44,6 +51,8 @@ import {
   getFamilyRelationships,
   getFamilyRequests,
 } from '../../patient-family/api/patient-family.api.js';
+import { PatientAppointmentsSection } from '../components/PatientAppointmentsSection.js';
+import './PatientDashboardPage.css';
 
 interface PatientDashboardPageProps {
   onNavigate: (path: string) => void;
@@ -354,6 +363,105 @@ export function PatientDashboardPage({
   const [showQueueDetails, setShowQueueDetails] = useState(false);
   const [showJourneyDetails, setShowJourneyDetails] = useState(false);
   const [showCareHistory, setShowCareHistory] = useState(false);
+  const [journeySearch, setJourneySearch] = useState('');
+  const [careHistorySearch, setCareHistorySearch] = useState('');
+  const [viewingAttachmentId, setViewingAttachmentId] = useState<string | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<{
+    url: string;
+    fileName: string;
+    contentType: string;
+  } | null>(null);
+  const selectedJourneyId = new URLSearchParams(window.location.search).get('journeyId');
+
+  useEffect(() => {
+    return () => {
+      if (attachmentPreview) {
+        URL.revokeObjectURL(attachmentPreview.url);
+      }
+    };
+  }, [attachmentPreview]);
+
+  const journeyFacilityGroups = journey?.data.reduce(
+    (groups, item) => {
+      const facility = item.journey.facility;
+      const group = groups.find((candidate) => candidate.facility.id === facility.id);
+      if (group) {
+        group.journeys.push(item);
+      } else {
+        groups.push({ facility, journeys: [item] });
+      }
+      return groups;
+    },
+    [] as Array<{
+      facility: PatientJourney['journey']['facility'];
+      journeys: PatientJourney[];
+    }>,
+  ) ?? [];
+
+  const filteredJourneyFacilityGroups = journeyFacilityGroups
+    .map((group) => ({
+      ...group,
+      journeys: group.journeys.filter((item) => {
+        const search = journeySearch.trim().toLowerCase();
+        if (!search) return true;
+        return [
+          group.facility.name,
+          group.facility.legalName ?? '',
+          item.journey.status,
+          item.journey.startedAt,
+          ...item.steps.flatMap((step) => [
+            step.name,
+            step.department?.name ?? '',
+            step.branch?.name ?? '',
+            step.queueEntry?.status ?? '',
+          ]),
+        ].some((value) => value.toLowerCase().includes(search));
+      }),
+    }))
+    .filter((group) => group.journeys.length > 0);
+
+  const careHistoryFacilityGroups = careHistory?.data.reduce(
+    (groups, visit) => {
+      const group = groups.find((candidate) => candidate.facility.code === visit.facility.code);
+      if (group) {
+        group.visits.push(visit);
+      } else {
+        groups.push({ facility: visit.facility, visits: [visit] });
+      }
+      return groups;
+    },
+    [] as Array<{
+      facility: CareHistoryItem['facility'];
+      visits: CareHistoryItem[];
+    }>,
+  ) ?? [];
+
+  const filteredCareHistoryFacilityGroups = careHistoryFacilityGroups
+    .map((group) => ({
+      ...group,
+      visits: group.visits.filter((visit) => {
+        const search = careHistorySearch.trim().toLowerCase();
+        if (!search) return true;
+        return [
+          group.facility.name,
+          group.facility.legalName ?? '',
+          visit.status,
+          visit.date,
+          ...visit.departments.flatMap((department) => [
+            department.name,
+            department.department?.name ?? '',
+            department.branch?.name ?? '',
+            ...department.care.flatMap((record) => [record.note ?? '', record.procedures ?? '']),
+          ]),
+          ...visit.clinicalNotes.flatMap((note) => [
+            note.chiefComplaint ?? '',
+            note.assessment ?? '',
+            note.plan ?? '',
+          ]),
+        ].some((value) => value.toLowerCase().includes(search));
+      }),
+    }))
+    .filter((group) => group.visits.length > 0);
 
   const activeJourneys =
     journey?.data?.filter(
@@ -406,6 +514,28 @@ export function PatientDashboardPage({
       setCareHistory(response);
     } catch {
       // Keep the main dashboard usable if history temporarily fails.
+    }
+  }
+
+  async function openCareAttachment(attachment: CareHistoryAttachment): Promise<void> {
+    setViewingAttachmentId(attachment.id);
+    setError(null);
+
+    try {
+      const file = await viewMyCareAttachment(attachment.id);
+      setAttachmentPreview({
+        url: URL.createObjectURL(file),
+        fileName: attachment.fileName,
+        contentType: attachment.contentType,
+      });
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to view this file.',
+      );
+    } finally {
+      setViewingAttachmentId(null);
     }
   }
 
@@ -1840,106 +1970,122 @@ export function PatientDashboardPage({
                   <h1>Care history</h1>
                 </div>
               </div>
-              {careHistory?.data.length ? (
-                <div className="patient-care-history-list">
-                  {careHistory.data.map((visit, visitIndex) => (
-                    <article
-                      className="patient-care-history-record patient-care-history-summary"
-                      key={`${visit.facility.code}-${visit.date}-${visitIndex}`}
+              <label className="patient-record-search">
+                <Search size={18} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={careHistorySearch}
+                  onChange={(event) => setCareHistorySearch(event.target.value)}
+                  placeholder="Search facilities, dates, departments or care notes"
+                  aria-label="Search care history"
+                />
+              </label>
+              {filteredCareHistoryFacilityGroups.length ? (
+                <div className="patient-record-facility-list">
+                  {filteredCareHistoryFacilityGroups.map((group) => (
+                    <details
+                      className="patient-record-facility"
+                      key={group.facility.code}
+                      open={group.visits.some((visit) => visit.journeyId === selectedJourneyId)}
                     >
-                      <div className="patient-care-history-summary-main">
-                        <div className="patient-care-history-summary-title">
-                          <strong>{visit.facility.name}</strong>
-                          <small>{new Date(visit.date).toLocaleString()}</small>
-                        </div>
-                        <span className="patient-care-history-status">
-                          {visit.status.replaceAll('_', ' ')}
+                      <summary>
+                        <span>
+                          <strong>{group.facility.name}</strong>
+                          <small>{group.facility.code} · {group.visits.length} visit{group.visits.length === 1 ? '' : 's'}</small>
                         </span>
-                      </div>
-                      <div className="patient-history-overview">
-                        <div>
-                          <span>Facility</span>
-                          <strong>{visit.facility.name}</strong>
-                        </div>
-                        <div>
-                          <span>Visit date</span>
-                          <strong>{new Date(visit.date).toLocaleString()}</strong>
-                        </div>
-                      </div>
-                      {visit.clinicalNotes.length ? (
-                        <section className="patient-history-clinical-section">
-                          <h2>Clinical notes</h2>
-                          {visit.clinicalNotes.map((note, noteIndex) => (
-                            <article
-                              className="patient-history-clinical-note"
-                              key={`${note.type}-${note.createdAt}-${noteIndex}`}
-                            >
-                              <strong>{note.type.replaceAll('_', ' ')}</strong>
-                              {note.chiefComplaint ? <p><b>Reason for visit:</b> {note.chiefComplaint}</p> : null}
-                              {note.subjective ? <p><b>Reported:</b> {note.subjective}</p> : null}
-                              {note.objective ? <p><b>Findings:</b> {note.objective}</p> : null}
-                              {note.assessment ? <p><b>Assessment:</b> {note.assessment}</p> : null}
-                              {note.plan ? <p><b>Plan:</b> {note.plan}</p> : null}
-                            </article>
-                          ))}
-                        </section>
-                      ) : null}
-                      {visit.departments.length ? (
-                        <section className="patient-history-departments">
-                          <h2>Care received</h2>
-                          {visit.departments.map((department, departmentIndex) => (
-                            <article
-                              className="patient-history-step"
-                              key={`${department.sequence}-${department.name}-${departmentIndex}`}
-                            >
-                              <div className="patient-history-step-header">
-                                <div>
-                                  <strong>{department.department?.name ?? department.name}</strong>
-                                  <span>{department.branch?.name ?? department.location ?? 'Location not provided'}</span>
-                                </div>
-                                <b>{department.status.replaceAll('_', ' ')}</b>
-                              </div>
-                              {department.description ? <p>{department.description}</p> : null}
-                              {department.instruction ? <p><b>Instructions:</b> {department.instruction}</p> : null}
-                              {department.care.map((record, recordIndex) => (
-                                <div className="patient-history-care-record" key={`${record.recordedAt}-${recordIndex}`}>
-                                  <span>{new Date(record.recordedAt).toLocaleString()}</span>
-                                  {record.note ? <p>{record.note}</p> : null}
-                                  {record.procedures ? <p><b>Services / procedures:</b> {record.procedures}</p> : null}
-                                  {record.attachments.length ? (
-                                    <div className="patient-history-attachments">
-                                      {record.attachments.map((attachment) => (
-                                        <span className="patient-history-attachment" key={attachment.id}>
-                                          {attachment.fileName}
-                                        </span>
+                        <span className="patient-record-facility-action">Show visits</span>
+                      </summary>
+                      <div className="patient-record-visit-list">
+                        {group.visits.map((visit) => (
+                          <details
+                            className="patient-record-visit"
+                            key={visit.journeyId}
+                            open={visit.journeyId === selectedJourneyId}
+                          >
+                            <summary>
+                              <span>
+                                <strong>{new Date(visit.date).toLocaleDateString()}</strong>
+                                <small>{new Date(visit.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {visit.departments.length} department{visit.departments.length === 1 ? '' : 's'}</small>
+                              </span>
+                              <b>{visit.status.replaceAll('_', ' ')}</b>
+                            </summary>
+                            <div className="patient-record-visit-details">
+                              {visit.clinicalNotes.length ? (
+                                <section className="patient-history-clinical-section">
+                                  <h2>Clinical summary</h2>
+                                  {visit.clinicalNotes.map((note, noteIndex) => (
+                                    <article className="patient-history-clinical-note" key={`${note.type}-${note.createdAt}-${noteIndex}`}>
+                                      <strong>{note.type.replaceAll('_', ' ')}</strong>
+                                      {note.chiefComplaint ? <p><b>Reason:</b> {note.chiefComplaint}</p> : null}
+                                      {note.assessment ? <p><b>Assessment:</b> {note.assessment}</p> : null}
+                                      {note.plan ? <p><b>Plan:</b> {note.plan}</p> : null}
+                                    </article>
+                                  ))}
+                                </section>
+                              ) : null}
+                              {visit.departments.length ? (
+                                <section className="patient-history-departments">
+                                  <h2>Department visits</h2>
+                                  {visit.departments.map((department, departmentIndex) => (
+                                    <article className="patient-history-step" key={`${department.sequence}-${department.name}-${departmentIndex}`}>
+                                      <div className="patient-history-step-header">
+                                        <div>
+                                          <strong>{department.department?.name ?? department.name}</strong>
+                                          <span>{department.branch?.name ?? department.location ?? 'Location not provided'}</span>
+                                        </div>
+                                        <b>{department.status.replaceAll('_', ' ')}</b>
+                                      </div>
+                                      {department.description ? <p>{department.description}</p> : null}
+                                      {department.care.map((record, recordIndex) => (
+                                        <div className="patient-history-care-record" key={`${record.recordedAt}-${recordIndex}`}>
+                                          <span>{new Date(record.recordedAt).toLocaleString()}</span>
+                                          {record.note ? <p>{record.note}</p> : null}
+                                          {record.procedures ? <p><b>Services / procedures:</b> {record.procedures}</p> : null}
+                                          {record.attachments.length ? (
+                                            <div className="patient-record-attachment-list">
+                                              {record.attachments.map((attachment) => (
+                                                <button
+                                                  type="button"
+                                                  className="patient-record-view-file"
+                                                  key={attachment.id}
+                                                  onClick={() => void openCareAttachment(attachment)}
+                                                  disabled={viewingAttachmentId === attachment.id}
+                                                >
+                                                  <Eye size={15} aria-hidden="true" />
+                                                  {viewingAttachmentId === attachment.id ? 'Opening…' : `View ${attachment.fileName}`}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          ) : null}
+                                        </div>
                                       ))}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              ))}
-                            </article>
-                          ))}
-                        </section>
-                      ) : null}
-                      {visit.referrals.length ? (
-                        <section className="patient-history-referrals">
-                          <h2>Referrals</h2>
-                          {visit.referrals.map((referral, referralIndex) => (
-                            <article key={`${referral.createdAt}-${referralIndex}`}>
-                              <strong>{referral.fromDepartment ?? 'Care team'}{referral.toDepartment ? ` to ${referral.toDepartment}` : ''}</strong>
-                              {referral.reason ? <p>{referral.reason}</p> : null}
-                              {referral.instruction ? <p>{referral.instruction}</p> : null}
-                            </article>
-                          ))}
-                        </section>
-                      ) : null}
-                    </article>
+                                    </article>
+                                  ))}
+                                </section>
+                              ) : null}
+                              {visit.referrals.length ? (
+                                <section className="patient-history-referrals">
+                                  <h2>Referrals</h2>
+                                  {visit.referrals.map((referral, referralIndex) => (
+                                    <article key={`${referral.createdAt}-${referralIndex}`}>
+                                      <strong>{referral.fromDepartment ?? 'Care team'}{referral.toDepartment ? ` to ${referral.toDepartment}` : ''}</strong>
+                                      {referral.reason ? <p>{referral.reason}</p> : null}
+                                      {referral.instruction ? <p>{referral.instruction}</p> : null}
+                                    </article>
+                                  ))}
+                                </section>
+                              ) : null}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    </details>
                   ))}
                 </div>
               ) : (
                 <div className="patient-dashboard-empty">
-                  <h2>No care history yet</h2>
-                  <p>Completed care visits will appear here.</p>
+                  <h2>{careHistory?.data.length ? 'No matching visits' : 'No care history yet'}</h2>
+                  <p>{careHistory?.data.length ? 'Try another facility, date or department.' : 'Completed care visits will appear here.'}</p>
                 </div>
               )}
             </section>
@@ -1951,35 +2097,70 @@ export function PatientDashboardPage({
                   <h1>Care journey</h1>
                 </div>
               </div>
-              {journey?.data.length ? (
-                <div className="patient-journey-record-list">
-                  {journey.data.map((item) => (
-                    <article className="patient-journey-record" key={item.journey.id}>
-                      <header>
-                        <div>
-                          <strong>{item.current?.department?.name ?? item.current?.name ?? 'Care journey'}</strong>
-                          <span>Started {new Date(item.journey.startedAt).toLocaleString()}</span>
-                        </div>
-                        <b>{item.journey.status.replaceAll('_', ' ')}</b>
-                      </header>
-                      <div className="patient-journey-timeline">
-                        {item.steps.map((step) => (
-                          <div className={`patient-journey-timeline-item ${step.id === item.current?.id ? 'current' : ''}`} key={step.id}>
-                            <div className="patient-journey-timeline-marker">{step.status === 'COMPLETED' ? '✓' : '•'}</div>
-                            <div>
-                              <strong>{step.department?.name ?? step.name}</strong>
-                              <span>{step.status.replaceAll('_', ' ')}</span>
-                              {step.location ? <p>{step.location}</p> : null}
-                              {step.instruction ? <p>{step.instruction}</p> : null}
-                            </div>
-                          </div>
-                        ))}
+              <label className="patient-record-search">
+                <Search size={18} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={journeySearch}
+                  onChange={(event) => setJourneySearch(event.target.value)}
+                  placeholder="Search facilities, dates or departments"
+                  aria-label="Search care journeys"
+                />
+              </label>
+              {filteredJourneyFacilityGroups.length ? (
+                <div className="patient-record-facility-list">
+                  {filteredJourneyFacilityGroups.map((group) => (
+                    <details
+                      className="patient-record-facility"
+                      key={group.facility.id}
+                      open={group.journeys.some((item) => item.journey.id === selectedJourneyId)}
+                    >
+                      <summary>
+                        <span>
+                          <strong>{group.facility.name}</strong>
+                          <small>{group.facility.code} · {group.journeys.length} visit{group.journeys.length === 1 ? '' : 's'}</small>
+                        </span>
+                        <span className="patient-record-facility-action">Show visits</span>
+                      </summary>
+                      <div className="patient-record-visit-list">
+                        {group.journeys.map((item) => {
+                          const lastStep = item.steps[item.steps.length - 1];
+                          const summaryStep = item.current ?? lastStep;
+                          const checkIn = item.steps.find((step) => step.type === 'CHECK_IN');
+                          const visitDate = checkIn?.queueEntry?.checkedInAt ?? item.journey.startedAt;
+
+                          return (
+                            <article className="patient-journey-visit" key={item.journey.id}>
+                              <div className="patient-journey-visit-main">
+                                <div>
+                                  <strong>{new Date(visitDate).toLocaleDateString()}</strong>
+                                  <span>{new Date(visitDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {item.steps.length} care steps</span>
+                                </div>
+                                <b>{item.journey.status.replaceAll('_', ' ')}</b>
+                              </div>
+                              <p>
+                                {summaryStep?.department?.name ?? summaryStep?.name ?? 'Visit'}
+                                {summaryStep ? ` · ${summaryStep.status.replaceAll('_', ' ').toLowerCase()}` : ''}
+                              </p>
+                              <button
+                                type="button"
+                                className="patient-record-see-more"
+                                onClick={() => onNavigate(`/patient/encounters?journeyId=${encodeURIComponent(item.journey.id)}`)}
+                              >
+                                See more <ArrowUpRight size={16} aria-hidden="true" />
+                              </button>
+                            </article>
+                          );
+                        })}
                       </div>
-                    </article>
+                    </details>
                   ))}
                 </div>
               ) : (
-                <div className="patient-dashboard-empty"><h2>No care journeys yet</h2><p>Active and completed care journeys will appear here.</p></div>
+                <div className="patient-dashboard-empty">
+                  <h2>{journey?.data.length ? 'No matching visits' : 'No care journeys yet'}</h2>
+                  <p>{journey?.data.length ? 'Try another facility, date or department.' : 'Active and completed care journeys will appear here.'}</p>
+                </div>
               )}
             </section>
           ) : currentPath === '/patient/facilities' ? (
@@ -2031,6 +2212,8 @@ export function PatientDashboardPage({
                 <div className="patient-dashboard-empty"><h2>No facility requests</h2><p>New requests from healthcare facilities will appear here.</p></div>
               )}
             </section>
+          ) : currentPath === '/patient/appointments' ? (
+            <PatientAppointmentsSection />
           ) : (
             <section className="patient-dashboard-section patient-patient-content-panel">
               <p className="patient-dashboard-eyebrow">PATIENT ACCOUNT</p>
@@ -2042,6 +2225,47 @@ export function PatientDashboardPage({
             </section>
           )}
         </main>
+
+        {attachmentPreview ? (
+          <div
+            className="patient-file-preview-backdrop"
+            role="presentation"
+            onClick={() => setAttachmentPreview(null)}
+          >
+            <section
+              className="patient-file-preview"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="patient-file-preview-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header>
+                <div>
+                  <p className="patient-dashboard-eyebrow">CARE DOCUMENT</p>
+                  <h2 id="patient-file-preview-title">{attachmentPreview.fileName}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="patient-file-preview-close"
+                  onClick={() => setAttachmentPreview(null)}
+                  aria-label="Close file preview"
+                >
+                  <X size={20} aria-hidden="true" />
+                </button>
+              </header>
+              <div className="patient-file-preview-content">
+                {attachmentPreview.contentType.startsWith('image/') ? (
+                  <img src={attachmentPreview.url} alt={attachmentPreview.fileName} />
+                ) : (
+                  <iframe
+                    src={attachmentPreview.url}
+                    title={attachmentPreview.fileName}
+                  />
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
       </div>
     </div>
   );

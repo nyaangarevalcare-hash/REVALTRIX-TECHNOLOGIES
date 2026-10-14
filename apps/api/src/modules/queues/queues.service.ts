@@ -12,7 +12,7 @@ import {
   QueueEntryStatus,
   QueueStatus,
 } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 
 import { DatabaseService } from '../../database/database.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
@@ -35,6 +35,35 @@ export class QueuesService {
     private readonly authorization: AuthorizationService,
     private readonly storage: PrivateObjectStorageService,
   ) {}
+
+  private async generateQueueNumber(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    queueId: string,
+  ): Promise<string> {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const letters = new Set<string>();
+      while (letters.size < 5) {
+        letters.add(alphabet[randomInt(alphabet.length)]!);
+      }
+
+      const queueNumber = [...letters].join('');
+      const existing = await transaction.queueEntry.findFirst({
+        where: { tenantId, queueId, queueNumber },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return queueNumber;
+      }
+    }
+
+    throw new ConflictException(
+      'Unable to allocate a unique five-letter queue number. Please retry.',
+    );
+  }
 
   private queueSelect() {
     return {
@@ -491,6 +520,7 @@ export class QueuesService {
           },
           select: {
             id: true,
+            tenantId: true,
           },
         },
       },
@@ -561,6 +591,7 @@ export class QueuesService {
           },
           select: {
             id: true,
+            tenantId: true,
           },
         },
       },
@@ -588,6 +619,8 @@ export class QueuesService {
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       select: {
         id: true,
+        tenantId: true,
+        queueId: true,
         queueNumber: true,
         priority: true,
         status: true,
@@ -640,6 +673,35 @@ export class QueuesService {
       },
     });
 
+    const queueIds = [...new Set(entries.map((entry) => entry.queueId))];
+    const waitingEntries = queueIds.length
+      ? await this.database.client.queueEntry.findMany({
+          where: {
+            tenantId: {
+              in: patient.tenantRecords.map((record) => record.tenantId),
+            },
+            queueId: { in: queueIds },
+            status: {
+              in: [QueueEntryStatus.CREATED, QueueEntryStatus.WAITING],
+            },
+          },
+          orderBy: [
+            { queueId: 'asc' },
+            { position: 'asc' },
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+          select: { id: true, queueId: true },
+        })
+      : [];
+    const livePositions = new Map<string, number>();
+    const positionsByQueue = new Map<string, number>();
+    for (const entry of waitingEntries) {
+      const position = (positionsByQueue.get(entry.queueId) ?? 0) + 1;
+      positionsByQueue.set(entry.queueId, position);
+      livePositions.set(entry.id, position);
+    }
+
     return {
       data: entries.map((entry) => {
         const latestCall = entry.calls[0] ?? null;
@@ -649,7 +711,11 @@ export class QueuesService {
           queueNumber: entry.queueNumber,
           priority: entry.priority,
           status: entry.status,
-          position: entry.position,
+          position:
+            entry.status === QueueEntryStatus.CREATED ||
+            entry.status === QueueEntryStatus.WAITING
+              ? (livePositions.get(entry.id) ?? null)
+              : null,
           checkedInAt: entry.checkedInAt,
           calledAt: entry.calledAt,
           startedAt: entry.startedAt,
@@ -1265,7 +1331,9 @@ export class QueuesService {
       where: {
         tenantId: params.tenantId,
         queueId: queue.id,
-        status: QueueEntryStatus.WAITING,
+        status: {
+          in: [QueueEntryStatus.CREATED, QueueEntryStatus.WAITING],
+        },
       },
     });
 
@@ -1282,7 +1350,11 @@ export class QueuesService {
         queueId: queue.id,
         encounterId: params.encounterId,
         patientTenantRecordId: params.patientTenantRecordId,
-        queueNumber: `${queue.code}-${randomUUID().slice(0, 8).toUpperCase()}`,
+        queueNumber: await this.generateQueueNumber(
+          transaction,
+          params.tenantId,
+          queue.id,
+        ),
         priority,
         status: QueueEntryStatus.WAITING,
         position,
@@ -1436,7 +1508,9 @@ export class QueuesService {
       where: {
         tenantId: params.tenantId,
         queueId: queue.id,
-        status: QueueEntryStatus.WAITING,
+        status: {
+          in: [QueueEntryStatus.CREATED, QueueEntryStatus.WAITING],
+        },
       },
     });
 
@@ -1448,7 +1522,11 @@ export class QueuesService {
         queueId: queue.id,
         encounterId: params.encounterId,
         patientTenantRecordId: params.patientTenantRecordId,
-        queueNumber: `${queue.code}-${randomUUID().slice(0, 8).toUpperCase()}`,
+        queueNumber: await this.generateQueueNumber(
+          transaction,
+          params.tenantId,
+          queue.id,
+        ),
         priority: QueueEntryPriority.ROUTINE,
         status: QueueEntryStatus.WAITING,
         position,
@@ -1573,7 +1651,9 @@ export class QueuesService {
             where: {
               tenantId: context.tenantId,
               queueId: queue.id,
-              status: QueueEntryStatus.WAITING,
+              status: {
+                in: [QueueEntryStatus.CREATED, QueueEntryStatus.WAITING],
+              },
             },
           });
 
@@ -1585,7 +1665,11 @@ export class QueuesService {
               queueId: queue.id,
               encounterId: encounter.id,
               patientTenantRecordId: encounter.patientTenantRecordId,
-              queueNumber: `${queue.code}-${randomUUID().slice(0, 8).toUpperCase()}`,
+              queueNumber: await this.generateQueueNumber(
+                tx,
+                context.tenantId,
+                queue.id,
+              ),
               priority: dto.priority ?? QueueEntryPriority.ROUTINE,
               status: QueueEntryStatus.WAITING,
               position,
@@ -2441,10 +2525,28 @@ export class QueuesService {
       'image/png',
       'image/webp',
     ]);
+    const expectedExtensions: Record<string, string[]> = {
+      'application/pdf': ['.pdf'],
+      'application/dicom': ['.dcm'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+    };
 
     if (!allowedContentTypes.has(file.mimetype)) {
       throw new BadRequestException(
         'Only PDF, DICOM, JPEG, PNG, and WebP clinical files are supported',
+      );
+    }
+
+    const lowerCaseFileName = file.originalname.toLowerCase();
+    if (
+      !expectedExtensions[file.mimetype]?.some((extension) =>
+        lowerCaseFileName.endsWith(extension),
+      )
+    ) {
+      throw new BadRequestException(
+        'The uploaded file extension does not match a supported clinical file type',
       );
     }
 

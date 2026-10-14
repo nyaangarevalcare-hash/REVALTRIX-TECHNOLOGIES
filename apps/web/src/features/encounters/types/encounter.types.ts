@@ -41,6 +41,7 @@ export interface Encounter {
     id: string;
     queueNumber: string;
     status: string;
+    position: number | null;
     reason: string | null;
     queue?: {
       id: string;

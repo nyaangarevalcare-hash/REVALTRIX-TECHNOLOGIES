@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import crypto from 'node:crypto';
 import {
+  EncounterType,
   EncounterStatus,
   Prisma,
   QueueEntryStatus,
@@ -60,6 +61,7 @@ export class EncountersService {
           id: true,
           queueNumber: true,
           status: true,
+          position: true,
           reason: true,
           queue: {
             select: {
@@ -306,6 +308,7 @@ export class EncountersService {
     allowedFrom: EncounterStatus[],
     toStatus: EncounterStatus,
     dto: TransitionEncounterDto = {},
+    existingTransaction?: Prisma.TransactionClient,
   ) {
     const context = await this.authorization.getContext(userId);
     const reason = dto.reason?.trim() || null;
@@ -321,7 +324,7 @@ export class EncountersService {
     }
 
     try {
-      return await this.database.client.$transaction(async (transaction) => {
+      const execute = async (transaction: Prisma.TransactionClient) => {
         const encounter = await transaction.encounter.findFirst({
           where: {
             id: encounterId,
@@ -487,12 +490,14 @@ export class EncountersService {
         }
 
         return updated;
-        },
-        {
+      };
+
+      return existingTransaction
+        ? await execute(existingTransaction)
+        : await this.database.client.$transaction(execute, {
           timeout: 15000,
           maxWait: 10000,
-        },
-      );
+        });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -503,6 +508,207 @@ export class EncountersService {
 
       throw error;
     }
+  }
+
+  async ensureAppointmentEncounterCheckedIn(
+    userId: string,
+    transaction: Prisma.TransactionClient,
+    appointment: {
+      id: string;
+      tenantId: string;
+      patientTenantRecordId: string;
+      providerId: string | null;
+      branchId: string | null;
+      departmentId: string | null;
+      reason: string | null;
+    },
+    fallbackReason?: string | null,
+  ) {
+    const context = await this.authorization.getContext(userId);
+
+    if (context.tenantId !== appointment.tenantId) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    const patient = await transaction.patientTenantRecord.findFirst({
+      where: {
+        id: appointment.patientTenantRecordId,
+        tenantId: context.tenantId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: { id: true, patientNumber: true },
+    });
+
+    if (!patient) {
+      throw new BadRequestException(
+        'Patient must be an active patient of this facility',
+      );
+    }
+
+    const existing = await transaction.encounter.findUnique({
+      where: { appointmentId: appointment.id },
+      select: {
+        id: true,
+        tenantId: true,
+        patientTenantRecordId: true,
+        status: true,
+      },
+    });
+
+    if (existing) {
+      if (
+        existing.tenantId !== context.tenantId ||
+        existing.patientTenantRecordId !== patient.id
+      ) {
+        throw new ConflictException(
+          'The appointment is already linked to a different encounter',
+        );
+      }
+
+      if (existing.status === EncounterStatus.CREATED) {
+        return this.transition(
+          userId,
+          existing.id,
+          [EncounterStatus.CREATED],
+          EncounterStatus.CHECKED_IN,
+          fallbackReason ? { reason: fallbackReason } : {},
+          transaction,
+        );
+      }
+
+      const alreadyCheckedInStatuses: EncounterStatus[] = [
+        EncounterStatus.CHECKED_IN,
+        EncounterStatus.TRIAGED,
+        EncounterStatus.IN_PROGRESS,
+        EncounterStatus.COMPLETED,
+      ];
+
+      if (
+        alreadyCheckedInStatuses.includes(existing.status)
+      ) {
+        return transaction.encounter.findFirstOrThrow({
+          where: {
+            id: existing.id,
+            tenantId: context.tenantId,
+          },
+          select: this.encounterSelect(),
+        });
+      }
+
+      throw new ConflictException(
+        `Linked encounter cannot be checked in from ${existing.status}`,
+      );
+    }
+
+    if (appointment.providerId) {
+      const provider = await transaction.providerProfile.findFirst({
+        where: {
+          id: appointment.providerId,
+          tenantId: context.tenantId,
+          status: RecordStatus.ACTIVE,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!provider) {
+        throw new BadRequestException(
+          'Provider does not belong to this facility or is not active',
+        );
+      }
+    }
+
+    if (appointment.branchId) {
+      const branch = await transaction.branch.findFirst({
+        where: {
+          id: appointment.branchId,
+          tenantId: context.tenantId,
+          status: RecordStatus.ACTIVE,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!branch) {
+        throw new BadRequestException(
+          'Branch does not belong to this facility or is not active',
+        );
+      }
+    }
+
+    const reason =
+      appointment.reason?.trim() || fallbackReason?.trim() || null;
+    const encounterNumber =
+      `ENC-${new Date().getUTCFullYear()}-${crypto.randomUUID()
+        .replace(/-/g, '')
+        .slice(0, 12)
+        .toUpperCase()}`;
+
+    const encounter = await transaction.encounter.create({
+      data: {
+        tenantId: context.tenantId,
+        patientTenantRecordId: patient.id,
+        providerId: appointment.providerId,
+        branchId: appointment.branchId,
+        departmentId: appointment.departmentId,
+        createdByUserId: userId,
+        appointmentId: appointment.id,
+        encounterNumber,
+        type: EncounterType.OUTPATIENT,
+        status: EncounterStatus.CREATED,
+        reason,
+      },
+      select: {
+        id: true,
+        encounterNumber: true,
+        branchId: true,
+        type: true,
+      },
+    });
+
+    await transaction.encounterStatusHistory.create({
+      data: {
+        encounterId: encounter.id,
+        tenantId: context.tenantId,
+        fromStatus: null,
+        toStatus: EncounterStatus.CREATED,
+        changedByUserId: userId,
+        reason: 'Encounter created from appointment check-in',
+      },
+    });
+
+    await transaction.auditEvent.create({
+      data: {
+        tenantId: context.tenantId,
+        actorUserId: userId,
+        branchId: encounter.branchId ?? context.branchId,
+        action: 'ENCOUNTER_CREATED',
+        resourceType: 'ENCOUNTER',
+        resourceId: encounter.id,
+        outcome: 'SUCCESS',
+        reason: 'Encounter created from appointment check-in',
+        metadata: {
+          encounterNumber: encounter.encounterNumber,
+          patientTenantRecordId: patient.id,
+          patientNumber: patient.patientNumber,
+          type: encounter.type,
+          providerId: appointment.providerId,
+          departmentId: appointment.departmentId,
+          branchId: appointment.branchId,
+          appointmentId: appointment.id,
+        },
+      },
+    });
+
+    return this.transition(
+      userId,
+      encounter.id,
+      [EncounterStatus.CREATED],
+      EncounterStatus.CHECKED_IN,
+      reason ? { reason } : {},
+      transaction,
+    );
   }
 
   async checkIn(
@@ -657,8 +863,51 @@ export class EncountersService {
       }),
     ]);
 
+    const queueIds = [
+      ...new Set(
+        encounters.flatMap((encounter) =>
+          (encounter.queueEntries ?? []).map((entry) => entry.queue.id),
+        ),
+      ),
+    ];
+    const waitingEntries = queueIds.length
+      ? await this.database.client.queueEntry.findMany({
+          where: {
+            tenantId: context.tenantId,
+            queueId: { in: queueIds },
+            status: {
+              in: [QueueEntryStatus.CREATED, QueueEntryStatus.WAITING],
+            },
+          },
+          orderBy: [
+            { queueId: 'asc' },
+            { position: 'asc' },
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+          select: { id: true, queueId: true },
+        })
+      : [];
+    const positions = new Map<string, number>();
+    const queuePositions = new Map<string, number>();
+    for (const entry of waitingEntries) {
+      const position = (queuePositions.get(entry.queueId) ?? 0) + 1;
+      queuePositions.set(entry.queueId, position);
+      positions.set(entry.id, position);
+    }
+
     return {
-      data: encounters,
+      data: encounters.map((encounter) => ({
+        ...encounter,
+        queueEntries: encounter.queueEntries?.map((entry) => ({
+          ...entry,
+          position:
+            entry.status === QueueEntryStatus.CREATED ||
+            entry.status === QueueEntryStatus.WAITING
+              ? (positions.get(entry.id) ?? null)
+              : null,
+        })),
+      })),
       pagination: {
         page,
         pageSize,

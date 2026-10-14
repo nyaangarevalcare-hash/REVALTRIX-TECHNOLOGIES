@@ -32,7 +32,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  const port = config.get<number>('app.port', 5000);
+  const port = config.get<number>('app.port', 5001);
 
   await app.listen(port);
 }

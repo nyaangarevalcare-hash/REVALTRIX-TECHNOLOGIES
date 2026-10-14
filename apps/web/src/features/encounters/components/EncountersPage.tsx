@@ -897,6 +897,8 @@ export function EncountersPage({
                             Queue: {activeQueueEntry.queue?.department?.name ?? activeQueueEntry.queue?.name ?? 'Department queue'}
                             <br />
                             Number: {activeQueueEntry.queueNumber}
+                            <br />
+                            Position: {activeQueueEntry.position ?? '—'}
                           </small>
                         ) : null}
                       </td>

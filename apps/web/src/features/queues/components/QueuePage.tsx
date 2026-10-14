@@ -1,20 +1,4 @@
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Clock3,
-  ListChecks,
-  PhoneCall,
-  Play,
-  Plus,
-  RefreshCw,
-  SkipForward,
-  UserRound,
-  UserRoundCheck,
-  Users,
-  XCircle,
-} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   callQueueEntry,
@@ -42,10 +26,9 @@ interface QueuePageProps {
   onNavigate: (path: string) => void;
 }
 
-type QueueAction =
-  'call' | 'start' | 'complete' | 'skip' | 'no-show' | 'cancel' | 'refer' | 'care-record';
+type QueueAction = 'call' | 'start' | 'skip' | 'no-show' | 'cancel' | 'care-record' | 'view-record';
 
-type CarePurpose = 'record' | 'complete' | 'refer' | 'view';
+type CarePurpose = 'record' | 'refer' | 'view';
 
 function patientName(entry: QueueEntry): string {
   const name = [
@@ -151,7 +134,12 @@ function renderActions(
 ) {
   if (isReferredEntry(entry)) {
     return (
-      <button type="button" disabled={busy} onClick={() => onAction(entry, 'care-record')}>
+      <button
+        type="button"
+        className="queue-action-button queue-action-button--record"
+        disabled={busy}
+        onClick={() => onAction(entry, 'care-record')}
+      >
         Open clinical record
       </button>
     );
@@ -162,57 +150,76 @@ function renderActions(
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '0.4rem',
-      }}
-    >
+    <div className="queue-entry-actions">
       {entry.status === 'WAITING' ? (
-        <button type="button" disabled={busy} onClick={() => onAction(entry, 'call')}>
+        <button
+          type="button"
+          className="queue-action-button queue-action-button--call"
+          disabled={busy}
+          onClick={() => onAction(entry, 'call')}
+        >
           {busy ? 'Calling...' : 'Call'}
         </button>
       ) : null}
 
       {entry.status === 'CALLED' ? (
-        <button type="button" disabled={busy} onClick={() => onAction(entry, 'start')}>
-          Start
+        <>
+          <button
+            type="button"
+            className="queue-action-button queue-action-button--start"
+            disabled={busy}
+            onClick={() => onAction(entry, 'start')}
+          >
+            {busy ? 'Starting...' : 'Start'}
+          </button>
+          <button
+            type="button"
+            className="queue-action-button queue-action-button--recall"
+            disabled={busy}
+            onClick={() => onAction(entry, 'call')}
+          >
+            {busy ? 'Recalling...' : 'Recall'}
+          </button>
+          <button
+            type="button"
+            className="queue-action-button queue-action-button--no-show"
+            disabled={busy}
+            onClick={() => onAction(entry, 'no-show')}
+          >
+            No-show
+          </button>
+        </>
+      ) : null}
+
+      {entry.status === 'IN_SERVICE' ? (
+        <button
+          type="button"
+          className="queue-action-button queue-action-button--record"
+          disabled={busy}
+          onClick={() => onAction(entry, 'care-record')}
+        >
+          {(entry._count?.careRecords ?? 0) > 0 ? 'Open clinical record' : 'Record care'}
         </button>
       ) : null}
 
-      {entry.status === 'IN_SERVICE' && (entry._count?.careRecords ?? 0) === 0 ? (
-        <>
-          <button type="button" disabled={busy} onClick={() => onAction(entry, 'care-record')}>
-            Record care
-          </button>
-        </>
-      ) : null}
-
-      {entry.status === 'IN_SERVICE' && (entry._count?.careRecords ?? 0) > 0 ? (
-        <>
-          <button type="button" disabled={busy} onClick={() => onAction(entry, 'refer')}>
-            Refer
-          </button>
-          <button type="button" disabled={busy} onClick={() => onAction(entry, 'complete')}>
-            Complete
-          </button>
-        </>
-      ) : null}
-
-      {entry.status === 'WAITING' || entry.status === 'CALLED' ? (
+      {entry.status === 'WAITING' ? (
         <details>
           <summary>More actions</summary>
           <div style={{ display: 'grid', gap: '0.4rem', paddingTop: '0.4rem' }}>
-            {entry.status === 'WAITING' ? (
-              <button type="button" disabled={busy} onClick={() => onAction(entry, 'skip')}>
-                Skip
-              </button>
-            ) : null}
-            <button type="button" disabled={busy} onClick={() => onAction(entry, 'no-show')}>
-              No-show
+            <button
+              type="button"
+              className="queue-action-button queue-action-button--secondary"
+              disabled={busy}
+              onClick={() => onAction(entry, 'skip')}
+            >
+              Skip
             </button>
-            <button type="button" disabled={busy} onClick={() => onAction(entry, 'cancel')}>
+            <button
+              type="button"
+              className="queue-action-button queue-action-button--no-show"
+              disabled={busy}
+              onClick={() => onAction(entry, 'cancel')}
+            >
               Cancel
             </button>
           </div>
@@ -229,6 +236,7 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
     () => new URLSearchParams(window.location.search).get('queueId') ?? '',
   );
   const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const [manageEntryId, setManageEntryId] = useState<string | null>(null);
 
   const [queueName, setQueueName] = useState('');
   const [queueCode, setQueueCode] = useState('');
@@ -245,6 +253,7 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
   const [careFiles, setCareFiles] = useState<File[]>([]);
   const [careDocumentUrl, setCareDocumentUrl] = useState('');
   const [carePurpose, setCarePurpose] = useState<CarePurpose>('record');
+  const [loadingCareRecords, setLoadingCareRecords] = useState(false);
   const [savingCare, setSavingCare] = useState(false);
   const [destinationDepartmentId, setDestinationDepartmentId] = useState('');
   const [referralReason, setReferralReason] = useState('');
@@ -254,6 +263,7 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
   const [success, setSuccess] = useState<string | null>(null);
 
   const selectedQueue = queues.find((queue) => queue.id === selectedQueueId) ?? null;
+  const manageEntry = entries.find((entry) => entry.id === manageEntryId) ?? null;
 
   const activeEntries = useMemo(() => entries.filter((entry) => !isTerminal(entry)), [entries]);
 
@@ -387,6 +397,7 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
   ): Promise<void> {
     setCareEntry(entry);
     setCarePurpose(purpose);
+    setCareRecords([]);
     setCareNote('');
     setCareProcedures('');
     setCareFiles([]);
@@ -395,6 +406,8 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
     setReferralReason('');
     setReferralInstruction('');
     setError(null);
+    setSuccess(null);
+    setLoadingCareRecords(true);
 
     try {
       setCareRecords(await getQueueCareRecords(entry.id));
@@ -405,47 +418,55 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
           ? requestError.message
           : 'Unable to load this department care record.',
       );
+    } finally {
+      setLoadingCareRecords(false);
     }
   }
 
   async function submitCareRecord(): Promise<void> {
-    if (!careEntry) {
+    if (!careEntry || loadingCareRecords || savingCare) {
       return;
     }
 
     const note = careNote.trim();
     const procedures = careProcedures.trim();
     const documentUrl = careDocumentUrl.trim();
-    const isReferral = carePurpose === 'refer';
     const currentStep = careEntry.journeySteps?.[0];
+    const isRecording = carePurpose === 'record';
 
-    if (isReferral && (!destinationDepartmentId || !referralReason.trim())) {
+    if (carePurpose === 'refer' && (!destinationDepartmentId || !referralReason.trim())) {
       setError('Select a destination department and enter a clinical referral reason.');
       return;
     }
 
-    if (isReferral && !currentStep) {
+    if (carePurpose === 'refer' && careRecords.length === 0) {
+      setError('Save a clinical record before referring this patient.');
+      return;
+    }
+
+    if (carePurpose === 'refer' && !currentStep) {
       setError(
         'This queue entry is not linked to an active care-journey step and cannot be referred.',
       );
       return;
     }
 
-    if (carePurpose === 'record' && !note && !procedures) {
+    if (
+      isRecording &&
+      careRecords.length === 0 &&
+      !note &&
+      !procedures &&
+      !documentUrl &&
+      careFiles.length === 0
+    ) {
       setError(
-        'Enter a clinical note or describe the procedures performed. A document URL or file may also be included.',
+        'Enter a clinical note, describe procedures, provide a document URL, or attach a file.',
       );
       return;
     }
 
-    if (
-      carePurpose === 'complete' &&
-      !note &&
-      !procedures &&
-      !documentUrl &&
-      careRecords.length === 0
-    ) {
-      setError('Record clinical notes or procedures before completing this department step.');
+    if (isRecording && careRecords.length > 0 && careFiles.length === 0) {
+      setError('A clinical record is already saved for this department step.');
       return;
     }
 
@@ -454,35 +475,35 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
     setSuccess(null);
 
     try {
-      let createdRecord: { id: string } | null = null;
       let destinationStaffNotified = 0;
-      let destinationName =
+      const destinationName =
         departments.find((department) => department.id === destinationDepartmentId)?.name ??
         'the selected department';
 
-      if (note || procedures || documentUrl || (isReferral && referralReason.trim())) {
-        createdRecord = await createQueueCareRecord(careEntry.id, {
-          note: note || (isReferral ? referralReason.trim() : undefined),
-          procedures: procedures || undefined,
-          documentUrl: documentUrl || undefined,
-        });
-      } else if (careFiles.length > 0 && careRecords.length > 0) {
-        createdRecord = { id: careRecords[careRecords.length - 1].id };
-      }
+      if (isRecording) {
+        let recordId = careRecords[careRecords.length - 1]?.id;
 
-      if (careFiles.length > 0 && !createdRecord) {
-        throw new Error('Enter a clinical note or procedure before uploading a file.');
-      }
-
-      if (createdRecord) {
-        for (const file of careFiles) {
-          await uploadQueueCareAttachment(createdRecord.id, file);
+        if (!recordId) {
+          const createdRecord = await createQueueCareRecord(careEntry.id, {
+            note: note || (careFiles.length > 0 ? 'Clinical attachment uploaded.' : undefined),
+            procedures: procedures || undefined,
+            documentUrl: documentUrl || undefined,
+          });
+          recordId = createdRecord.id;
         }
-      }
 
-      const refreshedCareRecords = await getQueueCareRecords(careEntry.id);
+        for (const file of careFiles) {
+          await uploadQueueCareAttachment(recordId, file);
+        }
 
-      if (isReferral) {
+        const refreshedCareRecords = await getQueueCareRecords(careEntry.id);
+        setCareRecords(refreshedCareRecords);
+        setCareNote('');
+        setCareProcedures('');
+        setCareFiles([]);
+        setCareDocumentUrl('');
+        setSuccess('Department clinical record saved.');
+      } else if (carePurpose === 'refer') {
         if (!currentStep) {
           throw new Error(
             'This queue entry is not linked to an active care-journey step and cannot be referred.',
@@ -497,27 +518,11 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
         });
 
         destinationStaffNotified = handoffResult.data.destinationStaffNotified;
-      } else if (carePurpose === 'complete') {
-        await completeQueueEntry(careEntry.id);
-      }
-
-      setCareRecords(refreshedCareRecords);
-
-      if (carePurpose === 'record') {
-        setCareNote('');
-        setCareProcedures('');
-        setCareFiles([]);
-        setCareDocumentUrl('');
-        setSuccess('Department clinical record saved.');
-      } else if (isReferral) {
         setSuccess(
           destinationStaffNotified > 0
             ? `${careEntry.queueNumber} referred to ${destinationName} and added to its queue. ${destinationStaffNotified} destination staff member(s) notified.`
             : `${careEntry.queueNumber} was added to ${destinationName}'s queue, but no active department staff received a notification. Check the department's staff assignments.`,
         );
-        setCareEntry(null);
-      } else if (carePurpose === 'complete') {
-        setSuccess(`${careEntry.queueNumber} department service completed successfully.`);
         setCareEntry(null);
       }
 
@@ -551,6 +556,38 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
     }
   }
 
+  async function completeCareEntry(): Promise<void> {
+    if (!careEntry || careRecords.length === 0 || savingCare) {
+      return;
+    }
+
+    setSavingCare(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await completeQueueEntry(careEntry.id);
+      setSuccess(`${careEntry.queueNumber} department service completed successfully.`);
+      setCareEntry(null);
+
+      try {
+        await loadEntries(selectedQueueId);
+      } catch (refreshError) {
+        const refreshMessage =
+          refreshError instanceof Error ? refreshError.message : 'Unable to refresh the queue.';
+        setError(`The action succeeded, but the queue could not be refreshed: ${refreshMessage}`);
+      }
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to complete this department service.',
+      );
+    } finally {
+      setSavingCare(false);
+    }
+  }
+
   async function handleDownloadAttachment(attachmentId: string, fileName: string): Promise<void> {
     setError(null);
 
@@ -573,17 +610,14 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
 
   async function handleAction(entry: QueueEntry, action: QueueAction): Promise<void> {
     if (action === 'care-record') {
+      setManageEntryId(null);
       await openCareWorkspace(entry, isReferredEntry(entry) ? 'view' : 'record');
       return;
     }
 
-    if (action === 'refer') {
-      await openCareWorkspace(entry, 'refer');
-      return;
-    }
-
-    if (action === 'complete') {
-      await openCareWorkspace(entry, 'complete');
+    if (action === 'view-record') {
+      setManageEntryId(null);
+      await openCareWorkspace(entry, 'view');
       return;
     }
 
@@ -633,6 +667,9 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
       }
 
       await loadEntries(selectedQueueId);
+      if (action !== 'call' && action !== 'start') {
+        setManageEntryId(null);
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error ? requestError.message : 'Unable to update queue entry.',
@@ -839,13 +876,8 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
                   <th>Position</th>
                   <th>Queue No.</th>
                   <th>Patient</th>
-                  <th>Patient No.</th>
-                  <th>Encounter</th>
-                  <th>Presenting concern</th>
-                  <th>Priority</th>
                   <th>Status</th>
-                  <th>Checked in</th>
-                  <th>Actions</th>
+                  <th>Manage</th>
                 </tr>
               </thead>
 
@@ -867,20 +899,6 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
                         <span className="queue-patient-name">{patientName(entry)}</span>
                       </td>
 
-                      <td>{entry.patientTenantRecord.patientNumber}</td>
-
-                      <td>
-                        <strong>Encounter check-in</strong>
-                        <br />
-                        {entry.encounter.encounterNumber}
-                      </td>
-
-                      <td>{entry.reason ?? entry.encounter.reason ?? 'Not recorded'}</td>
-
-                      <td>
-                        <Badge variant="outline">{priorityLabel(entry.priority)}</Badge>
-                      </td>
-
                       <td>
                         {(() => {
                           const handoff = referredHandoff(entry);
@@ -900,14 +918,18 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
                         })()}
                       </td>
 
-                      <td>{formatTime(entry.checkedInAt)}</td>
-
                       <td>
-                        {renderActions(
-                          entry,
-                          busy,
-                          (selectedEntry, action) => void handleAction(selectedEntry, action),
-                        )}
+                        <button
+                          type="button"
+                          className="queue-action-button queue-action-button--secondary"
+                          disabled={busy}
+                          onClick={() => {
+                            setError(null);
+                            setManageEntryId(entry.id);
+                          }}
+                        >
+                          Manage
+                        </button>
                       </td>
                     </tr>
                   );
@@ -917,6 +939,82 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
           </div>
         )}
       </section>
+
+      {manageEntry ? (
+        <div
+          className="queue-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && busyEntryId !== manageEntry.id) {
+              setManageEntryId(null);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="queue-manage-title"
+            className="queue-panel queue-manage-dialog"
+          >
+            <header className="queue-dialog-header">
+              <div>
+                <p className="patient-dashboard-eyebrow">
+                  {manageEntry.queue.department?.name ?? manageEntry.queue.name}
+                </p>
+                <h2 id="queue-manage-title">Manage {manageEntry.queueNumber}</h2>
+              </div>
+              <button
+                type="button"
+                className="queue-action-button queue-action-button--secondary"
+                disabled={busyEntryId === manageEntry.id}
+                onClick={() => setManageEntryId(null)}
+              >
+                Close
+              </button>
+            </header>
+
+            <dl className="queue-manage-details">
+              <div>
+                <dt>Encounter</dt>
+                <dd>{manageEntry.encounter.encounterNumber}</dd>
+              </div>
+              <div>
+                <dt>Presenting concern</dt>
+                <dd>{manageEntry.reason ?? manageEntry.encounter.reason ?? 'Not recorded'}</dd>
+              </div>
+              <div>
+                <dt>Priority</dt>
+                <dd>
+                  <Badge variant="outline">{priorityLabel(manageEntry.priority)}</Badge>
+                </dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>
+                  {isReferredEntry(manageEntry)
+                    ? `Referred to ${referredHandoff(manageEntry)?.toDepartment?.name ?? 'another department'}`
+                    : statusLabel(manageEntry.status)}
+                </dd>
+              </div>
+              <div>
+                <dt>Checked in</dt>
+                <dd>{formatTime(manageEntry.checkedInAt)}</dd>
+              </div>
+              <div>
+                <dt>Patient No.</dt>
+                <dd>{manageEntry.patientTenantRecord.patientNumber}</dd>
+              </div>
+            </dl>
+
+            <div className="queue-manage-actions">
+              {renderActions(
+                manageEntry,
+                busyEntryId === manageEntry.id,
+                (selectedEntry, action) => void handleAction(selectedEntry, action),
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {careEntry ? (
         <div
@@ -950,82 +1048,95 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
                 <h2 id="queue-care-title">
                   {carePurpose === 'refer'
                     ? `Refer ${careEntry.queueNumber}`
-                    : carePurpose === 'complete'
-                      ? `Complete ${careEntry.queueNumber}`
-                      : `Clinical record — ${careEntry.queueNumber}`}
+                    : `Clinical record — ${careEntry.queueNumber}`}
                 </h2>
                 <p>
                   {carePurpose === 'view'
                     ? 'Review the department clinical record and referral details.'
-                    : 'Record this department’s clinical work. Document URL and file upload are optional.'}
+                    : carePurpose === 'record'
+                      ? careRecords.length > 0
+                        ? 'The clinical record is saved. You can now refer the patient or complete this department step.'
+                        : 'Save the department clinical record once. After saving, referral and completion actions will appear here.'
+                      : 'Complete the referral form to send the patient to another department.'}
                 </p>
               </div>
-              <button type="button" onClick={() => setCareEntry(null)}>
+              <button type="button" disabled={savingCare} onClick={() => setCareEntry(null)}>
                 Close
               </button>
             </div>
             {error ? <p role="alert">{error}</p> : null}
+            {loadingCareRecords ? <p role="status">Checking saved clinical records…</p> : null}
+            {success ? (
+              <p className="queue-care-success" role="status">
+                {success}
+              </p>
+            ) : null}
 
             {carePurpose !== 'view' ? (
               <div className="queue-form">
-                <label>
-                  Clinical note
-                  <textarea
-                    value={careNote}
-                    onChange={(event) => setCareNote(event.target.value)}
-                    maxLength={10000}
-                    rows={4}
-                    placeholder="Document findings, advice, or other care delivered in this department."
-                  />
-                </label>
+                {carePurpose === 'record' && careRecords.length === 0 ? (
+                  <>
+                    <label>
+                      Clinical note
+                      <textarea
+                        value={careNote}
+                        onChange={(event) => setCareNote(event.target.value)}
+                        maxLength={10000}
+                        rows={4}
+                        placeholder="Document findings, advice, or other care delivered in this department."
+                      />
+                    </label>
 
-                <label>
-                  Procedures, tests, or services performed
-                  <textarea
-                    value={careProcedures}
-                    onChange={(event) => setCareProcedures(event.target.value)}
-                    maxLength={10000}
-                    rows={4}
-                    placeholder="Record the procedure, test, medication dispensing, imaging, or other department service."
-                  />
-                </label>
+                    <label>
+                      Procedures, tests, or services performed
+                      <textarea
+                        value={careProcedures}
+                        onChange={(event) => setCareProcedures(event.target.value)}
+                        maxLength={10000}
+                        rows={4}
+                        placeholder="Record the procedure, test, medication dispensing, imaging, or other department service."
+                      />
+                    </label>
 
-                <label>
-                  Clinical document URL (optional)
-                  <input
-                    type="url"
-                    value={careDocumentUrl}
-                    onChange={(event) => setCareDocumentUrl(event.target.value)}
-                    maxLength={2048}
-                    placeholder="https://..."
-                  />
-                </label>
+                    <label>
+                      Clinical document URL (optional)
+                      <input
+                        type="url"
+                        value={careDocumentUrl}
+                        onChange={(event) => setCareDocumentUrl(event.target.value)}
+                        maxLength={2048}
+                        placeholder="https://..."
+                      />
+                    </label>
+                  </>
+                ) : null}
 
-                <label>
-                  Attach clinical files (PDF, DICOM, JPEG, PNG, WebP; up to 25 MB each)
-                  <input
-                    type="file"
-                    accept=".pdf,.dcm,application/pdf,application/dicom,image/jpeg,image/png,image/webp"
-                    multiple
-                    onChange={(event) => {
-                      const files = Array.from(event.target.files ?? []);
-                      const oversized = files.find((file) => file.size > 25 * 1024 * 1024);
+                {carePurpose === 'record' ? (
+                  <>
+                    <label>
+                      Attach clinical files (PDF, DICOM, JPEG, PNG, WebP; up to 25 MB each)
+                      <input
+                        type="file"
+                        accept=".pdf,.dcm,application/pdf,application/dicom,image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={(event) => {
+                          const files = Array.from(event.target.files ?? []);
+                          const oversized = files.find((file) => file.size > 25 * 1024 * 1024);
 
-                      if (oversized) {
-                        setError(`${oversized.name} exceeds the 25 MB per-file limit.`);
-                        event.target.value = '';
-                        setCareFiles([]);
-                        return;
-                      }
+                          if (oversized) {
+                            setError(`${oversized.name} exceeds the 25 MB per-file limit.`);
+                            event.target.value = '';
+                            setCareFiles([]);
+                            return;
+                          }
 
-                      setError(null);
-                      setCareFiles(files);
-                    }}
-                  />
-                </label>
-
-                {careFiles.length ? (
-                  <p>{careFiles.length} file(s) ready to upload with this record.</p>
+                          setError(null);
+                          setCareFiles(files);
+                        }}
+                      />
+                    </label>
+                    {careFiles.length ? <p>{careFiles.length} file(s) ready to upload.</p> : null}
+                  </>
                 ) : null}
 
                 {carePurpose === 'refer' ? (
@@ -1071,33 +1182,82 @@ export function QueuePage({ onNavigate }: QueuePageProps) {
                   </>
                 ) : null}
 
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    disabled={
-                      savingCare ||
-                      (carePurpose === 'refer' &&
-                        (!destinationDepartmentId || !referralReason.trim())) ||
-                      (carePurpose === 'complete' &&
-                        !careNote.trim() &&
-                        !careProcedures.trim() &&
-                        !careDocumentUrl.trim() &&
-                        careRecords.length === 0) ||
-                      (carePurpose === 'record' && !careNote.trim() && !careProcedures.trim())
-                    }
-                    onClick={() => void submitCareRecord()}
-                  >
-                    {savingCare
-                      ? 'Saving...'
-                      : carePurpose === 'refer'
-                        ? 'Save clinical record and refer'
-                        : carePurpose === 'complete'
-                          ? 'Save clinical record and complete'
-                          : 'Save department care'}
-                  </button>
-                  <button type="button" disabled={savingCare} onClick={() => setCareEntry(null)}>
-                    Cancel
-                  </button>
+                <div className="queue-care-actions">
+                  {carePurpose === 'record' && careRecords.length === 0 ? (
+                    <button
+                      type="button"
+                      className="queue-action-button queue-action-button--record"
+                      disabled={
+                        loadingCareRecords ||
+                        savingCare ||
+                        (!careNote.trim() &&
+                          !careProcedures.trim() &&
+                          !careDocumentUrl.trim() &&
+                          careFiles.length === 0)
+                      }
+                      onClick={() => void submitCareRecord()}
+                    >
+                      {savingCare ? 'Saving clinical record…' : 'Save clinical record'}
+                    </button>
+                  ) : null}
+                  {carePurpose === 'record' && careRecords.length > 0 ? (
+                    <>
+                      {careFiles.length > 0 ? (
+                        <button
+                          type="button"
+                          className="queue-action-button queue-action-button--record"
+                          disabled={savingCare}
+                          onClick={() => void submitCareRecord()}
+                        >
+                          {savingCare ? 'Saving attachments…' : 'Save attachments'}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="queue-action-button queue-action-button--refer"
+                        disabled={savingCare || careRecords.length === 0}
+                        onClick={() => {
+                          setError(null);
+                          setCarePurpose('refer');
+                        }}
+                      >
+                        Refer
+                      </button>
+                      <button
+                        type="button"
+                        className="queue-action-button queue-action-button--complete"
+                        disabled={savingCare || careRecords.length === 0}
+                        onClick={() => {
+                          void completeCareEntry();
+                        }}
+                      >
+                        {savingCare ? 'Completing…' : 'Complete'}
+                      </button>
+                    </>
+                  ) : null}
+                  {carePurpose === 'refer' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="queue-action-button queue-action-button--refer"
+                        disabled={savingCare || !destinationDepartmentId || !referralReason.trim()}
+                        onClick={() => void submitCareRecord()}
+                      >
+                        {savingCare ? 'Submitting referral…' : 'Submit referral'}
+                      </button>
+                      <button
+                        type="button"
+                        className="queue-action-button queue-action-button--secondary"
+                        disabled={savingCare}
+                        onClick={() => {
+                          setError(null);
+                          setCarePurpose('record');
+                        }}
+                      >
+                        Back to clinical record
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ) : null}

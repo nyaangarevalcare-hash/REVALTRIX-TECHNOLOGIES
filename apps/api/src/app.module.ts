@@ -24,6 +24,9 @@ import { PatientDataModule } from './modules/patient-data/patient-data.module.js
 import { PatientFamilyModule } from './modules/patient-family/patient-family.module.js';
 import { ProvidersModule } from './modules/providers/providers.module.js';
 import { EncountersModule } from './modules/encounters/encounters.module.js';
+import { AppointmentsModule } from './modules/appointments/appointments.module.js';
+import { TenantFeaturesModule } from './modules/tenant-features/tenant-features.module.js';
+import { ShopModule } from './modules/shop/shop.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
 import { ClinicalNotesModule } from './modules/clinical-notes/clinical-notes.module.js';
 import { QueuesModule } from './modules/queues/queues.module.js';
@@ -66,6 +69,9 @@ const envFilePath = [
     PatientFamilyModule,
     ProvidersModule,
     EncountersModule,
+    AppointmentsModule,
+    TenantFeaturesModule,
+    ShopModule,
     ClinicalNotesModule,
     QueuesModule,
     PatientJourneysModule,

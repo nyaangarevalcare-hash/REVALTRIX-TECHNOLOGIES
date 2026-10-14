@@ -1,4 +1,5 @@
 import { authenticatedApiRequest } from '../../../lib/auth-api.js';
+import { getAuthSession } from '../../auth/api/auth-session.js';
 import type {
   PatientDashboardResponse,
   PatientJourneyResponse,
@@ -47,4 +48,28 @@ export async function getMyCareHistory(): Promise<CareHistoryResponse> {
   return authenticatedApiRequest<CareHistoryResponse>(
     '/v1/patients/me/care-history',
   );
+}
+
+export async function viewMyCareAttachment(attachmentId: string): Promise<Blob> {
+  const session = getAuthSession();
+
+  if (!session) {
+    throw new Error('Authentication required.');
+  }
+
+  const apiBaseUrl = import.meta.env.VITE_API_URL?.replace(/\/+$/, '') ?? '/api';
+  const response = await fetch(
+    `${apiBaseUrl}/v1/patients/me/care-attachments/${encodeURIComponent(attachmentId)}/view`,
+    {
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Unable to view care attachment (status ${response.status})`);
+  }
+
+  return response.blob();
 }

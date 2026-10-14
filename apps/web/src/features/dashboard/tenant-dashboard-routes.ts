@@ -1,6 +1,6 @@
 import type { TenantType } from './types.js';
 
-const TENANT_DASHBOARD_ROUTES: Record<TenantType, string> = {
+const LEGACY_TENANT_DASHBOARD_ROUTES: Record<TenantType, string> = {
   HOSPITAL: '/tenant/hospital',
   CLINIC: '/tenant/clinic',
   SPECIALIST_PRACTICE: '/tenant/specialist-practice',
@@ -22,14 +22,14 @@ const TENANT_DASHBOARD_ROUTES: Record<TenantType, string> = {
   OTHER_HEALTHCARE_PROVIDER: '/tenant/other-healthcare',
 };
 
-export function getTenantDashboardRoute(
-  tenantType: TenantType,
-): string {
-  return TENANT_DASHBOARD_ROUTES[tenantType];
+export function getTenantDashboardRoute(_tenantType: TenantType): string {
+  return '/tenant/dashboard';
 }
 
-export function isTenantDashboardRoute(
-  path: string,
-): boolean {
+export function isLegacyTenantDashboardRoute(tenantType: TenantType, path: string): boolean {
+  return path === LEGACY_TENANT_DASHBOARD_ROUTES[tenantType];
+}
+
+export function isTenantDashboardRoute(path: string): boolean {
   return path.startsWith('/tenant/');
 }

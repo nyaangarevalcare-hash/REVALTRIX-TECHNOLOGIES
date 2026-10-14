@@ -2,7 +2,7 @@ export default () => ({
   app: {
     name: process.env.APP_NAME ?? 'Revaltrix Platform API',
     environment: process.env.NODE_ENV ?? 'development',
-    port: Number(process.env.PORT ?? 5000),
+    port: Number(process.env.PORT ?? 5001),
     apiPrefix: process.env.API_PREFIX ?? 'api',
     webAppUrl: process.env.WEB_APP_URL ?? 'http://localhost:5173',
     corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
@@ -18,12 +18,11 @@ export default () => ({
     accessKeyId: process.env.STORAGE_ACCESS_KEY_ID ?? '',
     secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY ?? '',
     forcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true',
+    localPath: process.env.STORAGE_LOCAL_PATH ?? 'var/private-storage',
   },
 
   family: {
-    adolescentMinimumAge: Number(
-      process.env.FAMILY_ADOLESCENT_MINIMUM_AGE ?? 13,
-    ),
+    adolescentMinimumAge: Number(process.env.FAMILY_ADOLESCENT_MINIMUM_AGE ?? 13),
     adolescentRestrictedPermissions:
       process.env.FAMILY_ADOLESCENT_RESTRICTED_PERMISSIONS ??
       'lab-results.read,prescriptions.read,documents.read',

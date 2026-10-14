@@ -1022,11 +1022,21 @@ export function PatientFamilyPage({
         </section>
 
         {showAddMember && (
-          <section className="patient-profile-section">
+          <div
+            className="patient-family-modal-backdrop"
+            onClick={() => setShowAddMember(false)}
+          >
+          <section
+            className="patient-family-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="patient-family-add-member-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="patient-section-heading">
               <div>
                 <span className="patient-eyebrow">CONNECT</span>
-                <h2>Add someone who already uses Revaltrix</h2>
+                <h2 id="patient-family-add-member-title">Add someone who already uses Revaltrix</h2>
               </div>
 
               <button
@@ -1092,14 +1102,25 @@ export function PatientFamilyPage({
               </div>
             </form>
           </section>
+          </div>
         )}
 
         {showChildRegistration && (
-          <section className="patient-profile-section">
+          <div
+            className="patient-family-modal-backdrop"
+            onClick={() => setShowChildRegistration(false)}
+          >
+          <section
+            className="patient-family-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="patient-family-child-registration-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="patient-section-heading">
               <div>
                 <span className="patient-eyebrow">CHILD REGISTRATION</span>
-                <h2>Register a child or dependent</h2>
+                <h2 id="patient-family-child-registration-title">Register a child or dependent</h2>
               </div>
 
               <button
@@ -1381,6 +1402,7 @@ export function PatientFamilyPage({
               </div>
             </form>
           </section>
+          </div>
         )}
 
         <section className="patient-profile-section">
@@ -1726,11 +1748,23 @@ export function PatientFamilyPage({
         ) : null}
 
         {accessFormRelationship ? (
-          <section className="patient-profile-section">
+          <div
+            className="patient-family-modal-backdrop"
+            onClick={() => setAccessFormRelationship(null)}
+          >
+          <section
+            className="patient-family-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="patient-family-delegated-access-title"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="patient-section-heading">
               <div>
                 <span className="patient-eyebrow">MEDICAL ACCESS GRANTS</span>
-                <h2>{editingGrantId ? 'Edit permissions' : 'Grant medical access'}</h2>
+                <h2 id="patient-family-delegated-access-title">
+                  {editingGrantId ? 'Edit permissions' : 'Grant medical access'}
+                </h2>
               </div>
               <button
                 type="button"
@@ -1833,6 +1867,7 @@ export function PatientFamilyPage({
               </div>
             </form>
           </section>
+          </div>
         ) : null}
 
         {reviewingGrantId ? (

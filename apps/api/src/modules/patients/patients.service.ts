@@ -13,6 +13,7 @@ import type { EnrollPatientDto } from './dto/enroll-patient.dto.js';
 import type { RegisterPatientDto } from './dto/register-patient.dto.js';
 import { VerificationService } from '../verification/verification.service.js';
 import { QueuesService } from '../queues/queues.service.js';
+import { PrivateObjectStorageService } from '../storage/private-object-storage.service.js';
 
 @Injectable()
 export class PatientsService {
@@ -21,6 +22,7 @@ export class PatientsService {
     private readonly authorizationService: AuthorizationService,
     private readonly verificationService: VerificationService,
     private readonly queuesService: QueuesService,
+    private readonly storage: PrivateObjectStorageService,
   ) {}
 
   private async getContext(
@@ -282,6 +284,14 @@ export class PatientsService {
       select: {
         id: true,
         tenantId: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            legalName: true,
+            code: true,
+          },
+        },
         status: true,
         startedAt: true,
         encounterId: true,
@@ -647,6 +657,7 @@ export class PatientsService {
             status: journey.status,
             startedAt: journey.startedAt,
             encounterId: journey.encounterId,
+            facility: journey.tenant,
           },
           current,
           next,
@@ -1012,6 +1023,7 @@ export class PatientsService {
           });
 
         return {
+          journeyId: journey.id,
           facility: {
             name: journey.tenant.name,
             legalName: journey.tenant.legalName,
@@ -1069,6 +1081,53 @@ export class PatientsService {
           })),
         };
       }),
+    };
+  }
+
+  async viewMyCareAttachment(userId: string, attachmentId: string) {
+    const patient = await this.database.client.patientProfile.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        user: {
+          select: {
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!patient || patient.user.status !== 'ACTIVE') {
+      throw new NotFoundException('Patient account is not available');
+    }
+
+    const attachment = await this.database.client.queueCareAttachment.findFirst({
+      where: {
+        id: attachmentId,
+        careRecord: {
+          queueEntry: {
+            patientTenantRecord: {
+              patientProfileId: patient.id,
+              deletedAt: null,
+            },
+          },
+        },
+      },
+      select: {
+        storageKey: true,
+        fileName: true,
+        contentType: true,
+        byteSize: true,
+      },
+    });
+
+    if (!attachment) {
+      throw new NotFoundException('Care attachment not found');
+    }
+
+    return {
+      ...attachment,
+      buffer: await this.storage.get(attachment.storageKey),
     };
   }
 

@@ -16,3 +16,4 @@ coverage/
 .idea/
 
 *.tsbuildinfo
+/var/private-storage/

@@ -44,6 +44,61 @@ enum TenantType {
   OTHER_HEALTHCARE_PROVIDER
 }
 
+enum TenantFeature {
+  APPOINTMENTS
+  QUEUE
+  ENCOUNTERS
+  REFERRALS
+  LABORATORY
+  RADIOLOGY
+  PHARMACY
+  PROCEDURES
+  THEATRE
+  TELEHEALTH
+  HOME_VISITS
+  AMBULANCE
+  SHOP
+  INVENTORY
+  POS
+  INSURANCE
+  CORPORATE
+  CLAIMS
+  DISPATCH
+  ROUTE_PLANNING
+  MATERNITY
+  REHABILITATION
+  OPTICAL
+  DENTAL
+  NETWORK
+  EXTERNAL_INTEGRATIONS
+}
+
+enum ProductVisibility {
+  ONLINE
+  IN_STORE_ONLY
+  HIDDEN
+  DISCONTINUED
+}
+
+enum ShopOrderStatus {
+  PENDING
+  CONFIRMED
+  PACKED
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum ShopPaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
 enum ProviderType {
   PHYSICIAN
   DENTIST
@@ -444,8 +499,12 @@ model User {
   queueCareRecordsAuthored        QueueCareRecord[]         @relation("QueueCareRecordAuthor")
   queueCareAttachmentsUploaded    QueueCareAttachment[]     @relation("QueueCareAttachmentUploader")
 
-  notifications        Notification[]
-  webPushSubscriptions WebPushSubscription[]
+  notifications             Notification[]
+  webPushSubscriptions      WebPushSubscription[]
+  appointmentsCreated       Appointment[]              @relation("AppointmentCreator")
+  appointmentStatusChanges  AppointmentStatusHistory[] @relation("AppointmentStatusChanger")
+  availabilityRulesCreated  ProviderAvailability[]     @relation("ProviderAvailabilityCreator")
+  availabilityBlocksCreated AvailabilityBlock[]        @relation("AvailabilityBlockCreator")
 
   @@index([status])
   @@index([createdAt])
@@ -506,10 +565,13 @@ model ProviderProfile {
   updatedAt          DateTime     @updatedAt @db.Timestamptz(6)
   deletedAt          DateTime?    @db.Timestamptz(6)
 
-  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  user                  User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   encounters            Encounter[]
-  clinicalNotesAuthored ClinicalNote[] @relation("ClinicalNoteProviderAuthor")
+  clinicalNotesAuthored ClinicalNote[]         @relation("ClinicalNoteProviderAuthor")
+  appointments          Appointment[]
+  availabilityRules     ProviderAvailability[]
+  availabilityBlocks    AvailabilityBlock[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, providerNumber])
@@ -754,6 +816,7 @@ model Encounter {
   branchId              String? @db.Uuid
   departmentId          String? @db.Uuid
   createdByUserId       String  @db.Uuid
+  appointmentId         String? @unique @db.Uuid
 
   encounterNumber String          @db.VarChar(100)
   type            EncounterType
@@ -774,6 +837,7 @@ model Encounter {
   branch              Branch?                  @relation(fields: [branchId], references: [id], onDelete: Restrict)
   department          Department?              @relation(fields: [departmentId], references: [id], onDelete: Restrict)
   createdByUser       User                     @relation("EncounterCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  appointment         Appointment?             @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
   statusHistory       EncounterStatusHistory[]
   clinicalNotes       ClinicalNote[]
   queueEntries        QueueEntry[]
@@ -929,11 +993,20 @@ model Tenant {
   QueueCall                   QueueCall[]
   Notification                Notification[]
 
-  patientJourneys        PatientJourney[]
-  patientJourneySteps    PatientJourneyStep[]
-  patientJourneyHandoffs PatientJourneyHandoff[]
-  queueCareRecords       QueueCareRecord[]
-  queueCareAttachments   QueueCareAttachment[]
+  patientJourneys           PatientJourney[]
+  patientJourneySteps       PatientJourneyStep[]
+  patientJourneyHandoffs    PatientJourneyHandoff[]
+  queueCareRecords          QueueCareRecord[]
+  queueCareAttachments      QueueCareAttachment[]
+  appointments              Appointment[]
+  appointmentStatusHistory  AppointmentStatusHistory[]
+  providerAvailabilityRules ProviderAvailability[]
+  availabilityBlocks        AvailabilityBlock[]
+  featureSettings           TenantFeatureSetting[]
+  shopSettings              ShopSettings?
+  productCategories         ProductCategory[]
+  products                  Product[]
+  shopOrders                ShopOrder[]
 
   @@index([type])
   @@index([status])
@@ -967,6 +1040,143 @@ model TenantProfile {
   @@index([country])
   @@index([county])
   @@map("tenant_profiles")
+}
+
+model TenantFeatureSetting {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  feature         TenantFeature
+  enabled         Boolean       @default(false)
+  updatedByUserId String?       @db.Uuid
+  createdAt       DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, feature])
+  @@index([tenantId, enabled])
+  @@map("tenant_feature_settings")
+}
+
+model ShopSettings {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @unique @db.Uuid
+  storeName         String   @db.VarChar(200)
+  acceptingOrders   Boolean  @default(false)
+  openingHours      Json?
+  deliveryEnabled   Boolean  @default(false)
+  pickupEnabled     Boolean  @default(true)
+  deliveryFee       Decimal  @default(0) @db.Decimal(12, 2)
+  minimumOrderValue Decimal  @default(0) @db.Decimal(12, 2)
+  serviceAreas      Json?
+  currency          String   @default("KES") @db.VarChar(3)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("shop_settings")
+}
+
+model ProductCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String   @db.VarChar(120)
+  slug        String   @db.VarChar(140)
+  description String?  @db.VarChar(500)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+  @@map("product_categories")
+}
+
+model Product {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantId             String            @db.Uuid
+  categoryId           String?           @db.Uuid
+  name                 String            @db.VarChar(200)
+  sku                  String            @db.VarChar(100)
+  description          String?           @db.VarChar(2000)
+  images               String[]          @default([])
+  brand                String?           @db.VarChar(120)
+  price                Decimal           @db.Decimal(12, 2)
+  compareAtPrice       Decimal?          @db.Decimal(12, 2)
+  taxRate              Decimal           @default(0) @db.Decimal(6, 3)
+  stockQuantity        Int               @default(0)
+  reservedStock        Int               @default(0)
+  reorderLevel         Int               @default(0)
+  unit                 String            @default("unit") @db.VarChar(40)
+  barcode              String?           @db.VarChar(100)
+  expiryDate           DateTime?         @db.Date
+  batchNumber          String?           @db.VarChar(100)
+  visibility           ProductVisibility @default(HIDDEN)
+  prescriptionRequired Boolean           @default(false)
+  tags                 String[]          @default([])
+  createdAt            DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category   ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orderItems ShopOrderItem[]
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, barcode])
+  @@index([tenantId, visibility])
+  @@index([tenantId, categoryId])
+  @@map("products")
+}
+
+model ShopOrder {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid
+  orderNumber     String            @db.VarChar(100)
+  status          ShopOrderStatus   @default(PENDING)
+  paymentStatus   ShopPaymentStatus @default(UNPAID)
+  currency        String            @db.VarChar(3)
+  subtotal        Decimal           @db.Decimal(12, 2)
+  deliveryFee     Decimal           @default(0) @db.Decimal(12, 2)
+  taxTotal        Decimal           @default(0) @db.Decimal(12, 2)
+  total           Decimal           @db.Decimal(12, 2)
+  deliveryMethod  String            @db.VarChar(30)
+  deliveryAddress Json?
+  customerName    String            @db.VarChar(200)
+  customerPhone   String            @db.VarChar(50)
+  customerEmail   String?           @db.VarChar(320)
+  prescriptionKey String?           @db.VarChar(1000)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  ShopOrderItem[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, status, createdAt])
+  @@map("shop_orders")
+}
+
+model ShopOrderItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  orderId     String  @db.Uuid
+  productId   String  @db.Uuid
+  productName String  @db.VarChar(200)
+  sku         String  @db.VarChar(100)
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(12, 2)
+  taxRate     Decimal @db.Decimal(6, 3)
+  lineTotal   Decimal @db.Decimal(12, 2)
+
+  order   ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("shop_order_items")
 }
 
 model TenantSetup {
@@ -1036,9 +1246,12 @@ model Service {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  department Department? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  branch     Branch?     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  department         Department?            @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  branch             Branch?                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  appointments       Appointment[]
+  availabilityRules  ProviderAvailability[]
+  availabilityBlocks AvailabilityBlock[]
 
   @@unique([tenantId, code])
   @@index([tenantId, status])
@@ -1099,6 +1312,9 @@ model Branch {
   handoffsTo   PatientJourneyHandoff[] @relation("HandoffToBranch")
 
   patientJourneySteps PatientJourneyStep[]
+  appointments        Appointment[]
+  availabilityRules   ProviderAvailability[]
+  availabilityBlocks  AvailabilityBlock[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1135,6 +1351,9 @@ model Department {
   handoffsFrom        PatientJourneyHandoff[] @relation("HandoffFromDepartment")
   handoffsTo          PatientJourneyHandoff[] @relation("HandoffToDepartment")
   queueCareRecords    QueueCareRecord[]
+  appointments        Appointment[]
+  availabilityRules   ProviderAvailability[]
+  availabilityBlocks  AvailabilityBlock[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1939,6 +2158,7 @@ model PatientTenantRecord {
   relationshipRequests  PatientTenantRelationshipRequest[]
 
   patientJourneys PatientJourney[]
+  appointments    Appointment[]
 
   @@unique([tenantId, patientProfileId])
   @@unique([tenantId, patientNumber])
@@ -2356,4 +2576,148 @@ model NotificationDelivery {
   @@index([notificationId, channel])
   @@index([channel, status, availableAt])
   @@map("notification_deliveries")
+}
+
+enum AppointmentStatus {
+  REQUESTED
+  PENDING_APPROVAL
+  CONFIRMED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  REJECTED
+}
+
+enum AppointmentBookingSource {
+  PATIENT_PORTAL
+  STAFF
+  PHONE
+  WALK_IN
+  INTEGRATION
+}
+
+model Appointment {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  tenantId              String                   @db.Uuid
+  patientTenantRecordId String                   @db.Uuid
+  providerId            String?                  @db.Uuid
+  branchId              String?                  @db.Uuid
+  departmentId          String?                  @db.Uuid
+  serviceId             String?                  @db.Uuid
+  appointmentNumber     String                   @db.VarChar(100)
+  status                AppointmentStatus        @default(REQUESTED)
+  bookingSource         AppointmentBookingSource @default(PATIENT_PORTAL)
+  startAt               DateTime                 @db.Timestamptz(6)
+  endAt                 DateTime                 @db.Timestamptz(6)
+  timeZone              String                   @db.VarChar(100)
+  reason                String?                  @db.VarChar(1000)
+  patientNotes          String?                  @db.VarChar(2000)
+  staffNotes            String?                  @db.VarChar(2000)
+  cancellationReason    String?                  @db.VarChar(1000)
+  cancelledAt           DateTime?                @db.Timestamptz(6)
+  checkedInAt           DateTime?                @db.Timestamptz(6)
+  createdByUserId       String                   @db.Uuid
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(6)
+
+  tenant              Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  patientTenantRecord PatientTenantRecord        @relation(fields: [patientTenantRecordId], references: [id], onDelete: Restrict)
+  provider            ProviderProfile?           @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  branch              Branch?                    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  department          Department?                @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  service             Service?                   @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  createdByUser       User                       @relation("AppointmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  statusHistory       AppointmentStatusHistory[]
+  encounter           Encounter?
+
+  @@unique([tenantId, appointmentNumber])
+  @@index([tenantId, status, startAt])
+  @@index([tenantId, providerId, startAt, endAt])
+  @@index([tenantId, patientTenantRecordId, startAt])
+  @@index([tenantId, branchId, startAt])
+  @@index([tenantId, departmentId, startAt])
+  @@index([tenantId, serviceId, startAt])
+  @@map("appointments")
+}
+
+model AppointmentStatusHistory {
+  id              String             @id @default(uuid()) @db.Uuid
+  tenantId        String             @db.Uuid
+  appointmentId   String             @db.Uuid
+  fromStatus      AppointmentStatus?
+  toStatus        AppointmentStatus
+  reason          String?            @db.VarChar(1000)
+  changedByUserId String             @db.Uuid
+  createdAt       DateTime           @default(now()) @db.Timestamptz(6)
+
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  changedByUser User        @relation("AppointmentStatusChanger", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, appointmentId, createdAt])
+  @@index([changedByUserId, createdAt])
+  @@map("appointment_status_history")
+}
+
+model ProviderAvailability {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @db.Uuid
+  providerId      String    @db.Uuid
+  branchId        String?   @db.Uuid
+  departmentId    String?   @db.Uuid
+  serviceId       String?   @db.Uuid
+  dayOfWeek       Int
+  startMinute     Int
+  endMinute       Int
+  timeZone        String    @db.VarChar(100)
+  effectiveFrom   DateTime  @db.Date
+  effectiveTo     DateTime? @db.Date
+  slotDurationMin Int?
+  isActive        Boolean   @default(true)
+  createdByUserId String    @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  provider      ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  branch        Branch?         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  department    Department?     @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  service       Service?        @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  createdByUser User            @relation("ProviderAvailabilityCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, providerId, isActive, dayOfWeek])
+  @@index([tenantId, branchId, isActive])
+  @@index([tenantId, departmentId, isActive])
+  @@index([tenantId, serviceId, isActive])
+  @@map("provider_availability")
+}
+
+model AvailabilityBlock {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  providerId      String?  @db.Uuid
+  branchId        String?  @db.Uuid
+  departmentId    String?  @db.Uuid
+  serviceId       String?  @db.Uuid
+  startAt         DateTime @db.Timestamptz(6)
+  endAt           DateTime @db.Timestamptz(6)
+  reason          String?  @db.VarChar(1000)
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  provider      ProviderProfile? @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  branch        Branch?          @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  department    Department?      @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  service       Service?         @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  createdByUser User             @relation("AvailabilityBlockCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, startAt, endAt])
+  @@index([tenantId, providerId, startAt, endAt])
+  @@index([tenantId, branchId, startAt, endAt])
+  @@index([tenantId, departmentId, startAt, endAt])
+  @@map("availability_blocks")
 }

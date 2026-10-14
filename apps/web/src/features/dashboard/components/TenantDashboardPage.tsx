@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DashboardMembership } from '../types.js';
-import { getTenantSetup } from '../api/tenant-setup.api.js';
-import type {
-  TenantSetupRequirement,
-  TenantSetupResponse,
-} from '../types/tenant-setup.types.js';
+import { getTenantSetup, requestTenantActivation } from '../api/tenant-setup.api.js';
+import type { TenantSetupRequirement, TenantSetupResponse } from '../types/tenant-setup.types.js';
 
 interface TenantDashboardPageProps {
   membership: DashboardMembership;
@@ -44,8 +41,19 @@ const requirementRoutes: Record<string, string> = {
   departments: '/tenant/departments',
   services: '/tenant/services',
   providers: '/tenant/providers',
+  documents_uploaded: '/tenant/compliance',
+  documents_approved: '/tenant/compliance',
+  administrator_contacts_verified: '/tenant/access',
+  owner_identity_verified: '/tenant/compliance',
+  branch_configuration: '/tenant/branches',
+  provider_calendar: '/tenant/providers',
+  service_provider_link: '/tenant/services',
+  service_pricing: '/tenant/services',
+  booking_rules: '/tenant/appointments',
   resources: '/tenant/resources',
   payments: '/tenant/payments',
+  terms_accepted: '/tenant/compliance',
+  test_booking: '/tenant/appointments',
 };
 
 function RequirementRow({
@@ -66,24 +74,20 @@ function RequirementRow({
       <div className="tenant-readiness-content">
         <div className="tenant-readiness-title">
           <strong>{requirement.label}</strong>
-          {requirement.required && (
-            <span className="tenant-readiness-required">Required</span>
-          )}
+          {requirement.required && <span className="tenant-readiness-required">Required</span>}
         </div>
 
         <span className="tenant-readiness-weight">
           {requirement.complete
             ? 'Configuration complete'
-            : `${requirement.weight}% of readiness`}
+            : requirement.required
+              ? 'Required configuration'
+              : 'Optional configuration'}
         </span>
       </div>
 
       {!requirement.complete && route && onNavigate && (
-        <button
-          type="button"
-          className="tenant-readiness-action"
-          onClick={() => onNavigate(route)}
-        >
+        <button type="button" className="tenant-readiness-action" onClick={() => onNavigate(route)}>
           Configure
         </button>
       )}
@@ -96,7 +100,7 @@ function getStatusLabel(status: TenantSetupResponse['setup']['status']) {
     case 'LIVE':
       return 'Live';
     case 'READY':
-      return 'Ready for Go Live';
+      return 'Ready for activation review';
     case 'IN_PROGRESS':
       return 'Setup in progress';
     case 'BLOCKED':
@@ -116,6 +120,8 @@ export function TenantDashboardPage({
   const [setup, setSetup] = useState<TenantSetupResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activationSubmitting, setActivationSubmitting] = useState(false);
+  const [activationMessage, setActivationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,8 +156,7 @@ export function TenantDashboardPage({
   }, []);
 
   const tenantType = membership.tenant.type;
-  const dashboardName =
-    dashboardNames[tenantType] ?? 'Healthcare Organization';
+  const dashboardName = dashboardNames[tenantType] ?? 'Healthcare Organization';
 
   if (loading) {
     return (
@@ -184,9 +189,27 @@ export function TenantDashboardPage({
     );
   }
 
-  const incompleteRequired = setup.requirements.filter(
-    (item) => item.required && !item.complete,
-  );
+  const incompleteRequired = setup.requirements.filter((item) => item.required && !item.complete);
+
+  async function handleRequestActivation(): Promise<void> {
+    setActivationSubmitting(true);
+    setActivationMessage(null);
+    setError(null);
+
+    try {
+      const result = await requestTenantActivation();
+      setActivationMessage(result.message);
+      setSetup(await getTenantSetup());
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to submit the facility activation request.',
+      );
+    } finally {
+      setActivationSubmitting(false);
+    }
+  }
 
   return (
     <main className="tenant-dashboard-shell">
@@ -200,9 +223,7 @@ export function TenantDashboardPage({
         <div className="tenant-dashboard-user">
           <strong>{membership.roles[0]?.name ?? 'User'}</strong>
           {membership.branch && <span>{membership.branch.name}</span>}
-          {membership.department && (
-            <span>{membership.department.name}</span>
-          )}
+          {membership.department && <span>{membership.department.name}</span>}
         </div>
       </header>
 
@@ -215,8 +236,8 @@ export function TenantDashboardPage({
               : 'Prepare your organization for live operations'}
           </h2>
           <p>
-            Configure the required organization, operational and financial
-            settings before enabling live healthcare workflows.
+            Configure the required organization, operational and financial settings before enabling
+            live healthcare workflows.
           </p>
         </div>
 
@@ -238,8 +259,7 @@ export function TenantDashboardPage({
 
         <div className="tenant-readiness-summary">
           <span>
-            {setup.summary.completed} of {setup.summary.total} configuration
-            items complete
+            {setup.summary.completed} of {setup.summary.total} configuration items complete
           </span>
           <strong>{getStatusLabel(setup.setup.status)}</strong>
         </div>
@@ -263,17 +283,24 @@ export function TenantDashboardPage({
             </p>
           </div>
 
-          {setup.summary.ready && onNavigate && (
+          {setup.summary.ready && (
             <button
               type="button"
               className="tenant-primary-action"
-              onClick={() => onNavigate('/tenant/go-live')}
+              disabled={activationSubmitting}
+              onClick={() => void handleRequestActivation()}
             >
-              Review Go Live
+              {activationSubmitting ? 'Submitting…' : 'Request activation'}
             </button>
           )}
         </section>
       )}
+
+      {activationMessage ? (
+        <section className="tenant-readiness-callout" role="status">
+          <p>{activationMessage}</p>
+        </section>
+      ) : null}
 
       <section className="tenant-dashboard-content">
         <div className="tenant-dashboard-main">
@@ -284,8 +311,7 @@ export function TenantDashboardPage({
                 <h2>Organization configuration</h2>
               </div>
               <span>
-                {setup.summary.requiredCompleted}/
-                {setup.summary.required} required
+                {setup.summary.requiredCompleted}/{setup.summary.required} required
               </span>
             </div>
 

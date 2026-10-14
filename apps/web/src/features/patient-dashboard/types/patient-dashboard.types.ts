@@ -124,6 +124,12 @@ export interface PatientJourney {
     status: string;
     startedAt: string;
     encounterId: string | null;
+    facility: {
+      id: string;
+      name: string;
+      legalName: string | null;
+      code: string;
+    };
   };
   current: PatientJourneyStep | null;
   next: PatientJourneyStep | null;
@@ -218,6 +224,7 @@ export interface CareHistoryClinicalNote {
 }
 
 export interface CareHistoryItem {
+  journeyId: string;
   facility: {
     name: string;
     legalName: string | null;

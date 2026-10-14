@@ -6,8 +6,10 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../core/authentication/guards/access-token.guard.js';
 import { AccessTokenGuard } from '../core/authentication/guards/access-token.guard.js';
 import { PermissionGuard } from '../authorization/guards/permission.guard.js';
@@ -50,6 +52,28 @@ export class PatientsController {
     return this.patientsService.getMyCareHistory(
       request.auth.userId,
     );
+  }
+
+  @Get('me/care-attachments/:attachmentId/view')
+  async viewMyCareAttachment(
+    @Req() request: AuthenticatedRequest,
+    @Param('attachmentId') attachmentId: string,
+    @Res() response: Response,
+  ) {
+    const attachment = await this.patientsService.viewMyCareAttachment(
+      request.auth.userId,
+      attachmentId,
+    );
+
+    response.set({
+      'Content-Type': attachment.contentType,
+      'Content-Length': attachment.byteSize,
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': 'sandbox',
+    });
+    response.send(attachment.buffer);
   }
 
   @Get()
