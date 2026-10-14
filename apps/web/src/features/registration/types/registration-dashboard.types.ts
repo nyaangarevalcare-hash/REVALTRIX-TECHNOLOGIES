@@ -31,6 +31,7 @@ export interface PatientProfile {
 }
 
 export interface RegistrationDashboardResponse {
+  staffApprovalPending: boolean;
   registration: {
     id: string;
     type: RegistrationType;

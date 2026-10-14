@@ -150,8 +150,13 @@ export class RegistrationDashboardService {
     const passwordComplete = Boolean(emailIdentityId && passwordConfigured);
 
     const onboardingComplete = registration.onboardingStatus === 'COMPLETED';
+    const staffApprovalPending =
+      Boolean(staffProfile) &&
+      registration.status === 'VERIFICATION_REQUIRED' &&
+      verificationComplete;
 
     return {
+      staffApprovalPending,
       registration: {
         id: registration.id,
         type: registration.type,

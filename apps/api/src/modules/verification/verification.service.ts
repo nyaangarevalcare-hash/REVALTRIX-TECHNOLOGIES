@@ -590,6 +590,14 @@ export class VerificationService {
     }
 
     const now = new Date();
+    const staffProfile = await this.database.client.staffProfile.findFirst({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        tenant: { status: 'ACTIVE', deletedAt: null },
+      },
+      select: { tenantId: true },
+    });
 
     await this.database.client.$transaction(async (tx) => {
       await tx.verificationChallenge.update({
@@ -615,6 +623,7 @@ export class VerificationService {
       const registrations = await tx.registration.findMany({
         where: {
           userId,
+          ...(staffProfile ? { tenantId: staffProfile.tenantId, type: 'TENANT' as const } : {}),
           status: {
             in: ['INITIATED', 'VERIFICATION_REQUIRED'],
           },
@@ -629,92 +638,21 @@ export class VerificationService {
           where: { id: registration.id },
           data: {
             verificationStatus: 'VERIFIED',
-            status: 'ONBOARDING',
-            onboardingStatus: 'IN_PROGRESS',
+            ...(!staffProfile
+              ? { status: 'ONBOARDING' as const, onboardingStatus: 'IN_PROGRESS' as const }
+              : {}),
           },
         });
       }
     });
-
-    const staffProfile = await this.database.client.staffProfile.findFirst({
-      where: {
-        userId,
-        status: 'ACTIVE',
-        tenant: {
-          status: 'ACTIVE',
-          deletedAt: null,
-        },
-      },
-      select: {
-        tenantId: true,
-      },
-    });
-
-    let onboardingEmailSent: boolean | null = null;
-
-    if (staffProfile && challenge.channel === 'EMAIL') {
-      await this.database.client.registrationSession.updateMany({
-        where: {
-          userId,
-          consumedAt: null,
-        },
-        data: { consumedAt: new Date() },
-      });
-      const registrationToken = randomBytes(32).toString('base64url');
-      const registrationTokenHash = createHash('sha256').update(registrationToken).digest('hex');
-      const registrationTokenExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
-      const registrationSession = await this.database.client.registrationSession.create({
-        data: {
-          userId,
-          tokenHash: registrationTokenHash,
-          expiresAt: registrationTokenExpiresAt,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      const verifiedEmail = await this.database.client.identity.findFirst({
-        where: {
-          userId,
-          type: 'EMAIL',
-          status: 'ACTIVE',
-          verifiedAt: { not: null },
-        },
-        select: { value: true },
-      });
-
-      try {
-        if (!verifiedEmail) {
-          throw new BadRequestException('Verified staff email identity was not found');
-        }
-
-        await this.verificationEmailService.sendStaffPasswordSetup(
-          verifiedEmail.value,
-          registrationToken,
-          registrationTokenExpiresAt,
-        );
-        onboardingEmailSent = true;
-      } catch (error) {
-        await this.database.client.registrationSession.update({
-          where: { id: registrationSession.id },
-          data: { consumedAt: new Date() },
-        });
-        this.logger.error(
-          'Staff password setup email could not be delivered',
-          error instanceof Error ? error.stack : undefined,
-        );
-        onboardingEmailSent = false;
-      }
-    }
 
     return {
       verified: true,
       channel: challenge.channel,
       challengeId: challenge.id,
       verificationStatus: 'VERIFIED',
-      registrationStatus: 'ONBOARDING',
-      ...(onboardingEmailSent !== null ? { onboardingEmailSent } : {}),
+      registrationStatus: staffProfile ? 'VERIFICATION_REQUIRED' : 'ONBOARDING',
+      ...(staffProfile ? { adminApprovalRequired: true } : {}),
     };
   }
 }

@@ -10,6 +10,7 @@ import { RegistrationPasswordSetup } from '../components/RegistrationPasswordSet
 import { completeOnboarding } from '../api/onboarding.api.js';
 import { setAuthSession } from '../../auth/api/auth-session.js';
 import { clearRegistrationToken } from '../api/registration-dashboard.api.js';
+import type { SetRegistrationPasswordResponse } from '../api/registration-password.api.js';
 
 export function RegistrationDashboardPage() {
   const [dashboard, setDashboard] = useState<RegistrationDashboardResponse | null>(null);
@@ -68,12 +69,24 @@ export function RegistrationDashboardPage() {
 
   const verificationRequired = !dashboard.verification.complete;
   const passwordRequired = dashboard.steps.password.required && !dashboard.steps.password.complete;
+  const isStaffRegistration = dashboard.profile.type === 'STAFF';
 
   const onboardingReady =
     dashboard.verification.complete &&
     dashboard.steps.profile.complete &&
     dashboard.steps.password.complete &&
-    !dashboard.steps.onboarding.complete;
+    !dashboard.steps.onboarding.complete &&
+    !isStaffRegistration;
+
+  function handlePasswordConfigured(response: SetRegistrationPasswordResponse): void {
+    if (isStaffRegistration && response.authentication) {
+      setAuthSession(response.authentication);
+      clearRegistrationToken();
+      window.location.assign('/staff/dashboard');
+      return;
+    }
+    void loadDashboard();
+  }
 
   async function handleCompleteOnboarding(): Promise<void> {
     setCompleting(true);
@@ -123,9 +136,26 @@ export function RegistrationDashboardPage() {
 
           <VerificationStatusCard verification={dashboard.verification} />
 
-          {dashboard.verification.complete && passwordRequired && (
-            <RegistrationPasswordSetup onConfigured={() => void loadDashboard()} />
+          {dashboard.staffApprovalPending && (
+            <section className="dashboard-card">
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Email verified</p>
+                  <h2>Waiting for organization approval</h2>
+                </div>
+              </div>
+              <p>
+                Your email address is verified. An organization administrator must approve your
+                staff account before we send the secure password setup link.
+              </p>
+            </section>
           )}
+
+          {dashboard.verification.complete &&
+            passwordRequired &&
+            !dashboard.staffApprovalPending && (
+              <RegistrationPasswordSetup onConfigured={handlePasswordConfigured} />
+            )}
 
           <ProfileStatusCard profile={dashboard.profile} onUpdated={() => void loadDashboard()} />
 

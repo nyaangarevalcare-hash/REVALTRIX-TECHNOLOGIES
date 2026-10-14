@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { setRegistrationPassword } from '../api/registration-password.api.js';
+import type { SetRegistrationPasswordResponse } from '../api/registration-password.api.js';
 
 interface RegistrationPasswordSetupProps {
-  onConfigured: () => void;
+  onConfigured: (response: SetRegistrationPasswordResponse) => void;
 }
 
-export function RegistrationPasswordSetup({
-  onConfigured,
-}: RegistrationPasswordSetupProps) {
+export function RegistrationPasswordSetup({ onConfigured }: RegistrationPasswordSetupProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,9 +16,7 @@ export function RegistrationPasswordSetup({
 
   const passwordLongEnough = password.length >= 12;
   const passwordsMatch =
-    password.length > 0 &&
-    confirmPassword.length > 0 &&
-    password === confirmPassword;
+    password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
 
   async function handleSubmit(): Promise<void> {
     if (!passwordLongEnough) {
@@ -36,15 +33,13 @@ export function RegistrationPasswordSetup({
     setSubmitting(true);
 
     try {
-      await setRegistrationPassword(password, confirmPassword);
+      const response = await setRegistrationPassword(password, confirmPassword);
       setPassword('');
       setConfirmPassword('');
-      onConfigured();
+      onConfigured(response);
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Unable to configure your password.',
+        requestError instanceof Error ? requestError.message : 'Unable to configure your password.',
       );
     } finally {
       setSubmitting(false);
@@ -61,8 +56,8 @@ export function RegistrationPasswordSetup({
       </div>
 
       <p className="password-description">
-        Create a secure password for your Revaltrix account. Your password
-        must contain at least 12 characters.
+        Create a secure password for your Revaltrix account. Your password must contain at least 12
+        characters.
       </p>
 
       <div className="password-fields">
@@ -107,9 +102,7 @@ export function RegistrationPasswordSetup({
             <button
               type="button"
               className="password-visibility-button"
-              onClick={() =>
-                setShowConfirmPassword((current) => !current)
-              }
+              onClick={() => setShowConfirmPassword((current) => !current)}
             >
               {showConfirmPassword ? 'Hide' : 'Show'}
             </button>
@@ -132,11 +125,7 @@ export function RegistrationPasswordSetup({
       <button
         type="button"
         className="primary-button"
-        disabled={
-          submitting ||
-          !passwordLongEnough ||
-          !passwordsMatch
-        }
+        disabled={submitting || !passwordLongEnough || !passwordsMatch}
         onClick={() => void handleSubmit()}
       >
         {submitting ? 'Creating password...' : 'Create password'}

@@ -109,7 +109,8 @@ export class VerificationEmailService {
         '',
         `Open the secure verification page: ${verificationUrl}`,
         '',
-        'After verification, Revaltrix will email you a separate link to create your password.',
+        'After you verify this code, your organization administrator must approve your staff account.',
+        'Once approved, we will email you a separate secure link to create your password.',
         'If you did not expect this invitation, contact your organization administrator.',
       ].join('\n'),
       html: `
@@ -122,7 +123,8 @@ export class VerificationEmailService {
             <p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p>
             <p>This code expires in ${expiresInMinutes} minutes.</p>
             <p><a href="${verificationUrl}">Open the secure verification page</a></p>
-            <p>After verification, we will email you a separate link to create your password.</p>
+            <p>After you verify this code, your organization administrator must approve your staff account.</p>
+            <p>Once approved, we will email you a separate secure link to create your password.</p>
             <p>If you did not expect this invitation, contact your organization administrator.</p>
           </body>
         </html>
@@ -264,6 +266,43 @@ export class VerificationEmailService {
             </p>
             <p>This secure link expires in ${expiresInMinutes} minutes.</p>
             <p>If you did not expect this invitation, contact your organization administrator.</p>
+          </body>
+        </html>
+      `,
+    });
+  }
+
+  async sendStaffPasswordReset(email: string, resetToken: string, expiresAt: Date): Promise<void> {
+    const webAppUrl = this.config.getOrThrow<string>('app.webAppUrl').replace(/\/+$/, '');
+    const resetUrl =
+      `${webAppUrl}/staff/password-reset` + `#registration_token=${encodeURIComponent(resetToken)}`;
+    const expiresInMinutes = Math.max(1, Math.ceil((expiresAt.getTime() - Date.now()) / 60000));
+
+    await this.emailService.send({
+      to: email,
+      subject: 'Reset your Revaltrix staff password',
+      text: [
+        'An organization administrator requested a password reset for your Revaltrix staff account.',
+        '',
+        'Use this secure link to choose a new password:',
+        resetUrl,
+        '',
+        `This one-time link expires in ${expiresInMinutes} minutes.`,
+        'If you did not expect this message, contact your organization administrator.',
+      ].join('\n'),
+      html: `
+        <!doctype html>
+        <html lang="en">
+          <body style="font-family:Arial,Helvetica,sans-serif;color:#202124">
+            <h1>Reset your staff password</h1>
+            <p>An organization administrator requested a password reset for your account.</p>
+            <p>
+              <a href="${resetUrl}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#111827;color:#ffffff;text-decoration:none;">
+                Choose a new password
+              </a>
+            </p>
+            <p>This one-time link expires in ${expiresInMinutes} minutes.</p>
+            <p>If you did not expect this message, contact your organization administrator.</p>
           </body>
         </html>
       `,

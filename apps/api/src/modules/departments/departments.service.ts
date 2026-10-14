@@ -393,6 +393,20 @@ export class DepartmentsService {
       },
       select: {
         id: true,
+        user: {
+          select: {
+            identities: {
+              where: {
+                type: 'EMAIL',
+                status: 'ACTIVE',
+                verifiedAt: { not: null },
+                credentialHash: { not: null },
+              },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        },
         assignments: {
           where: {
             departmentId,
@@ -402,7 +416,9 @@ export class DepartmentsService {
             id: true,
             role: true,
             accessLevel: true,
+            branchId: true,
           },
+          orderBy: { assignedAt: 'desc' },
           take: 1,
         },
       },
@@ -416,7 +432,7 @@ export class DepartmentsService {
           : null,
     };
 
-    if (!department || !staffProfile?.assignments.length) {
+    if (!department || !staffProfile?.assignments.length || !staffProfile.user.identities.length) {
       await this.database.client.departmentAccessAttempt.create({
         data: {
           userId,
@@ -476,9 +492,7 @@ export class DepartmentsService {
 
     const assignment = staffProfile.assignments[0];
     if (!assignment) {
-      throw new ForbiddenException(
-        'You are not assigned to this department',
-      );
+      throw new ForbiddenException('You are not assigned to this department');
     }
     await this.database.client.departmentAccessAttempt.create({
       data: {
@@ -496,6 +510,8 @@ export class DepartmentsService {
         sid: sessionId,
         tenantId,
         departmentId,
+        assignmentId: assignment.id,
+        branchId: assignment.branchId,
         type: 'department_access',
       },
       {
@@ -518,6 +534,7 @@ export class DepartmentsService {
       assignment: {
         role: assignment.role,
         accessLevel: assignment.accessLevel,
+        branchId: assignment.branchId,
       },
     };
   }
@@ -537,6 +554,8 @@ export class DepartmentsService {
       sid?: string;
       tenantId?: string;
       departmentId?: string;
+      assignmentId?: string;
+      branchId?: string | null;
       type?: string;
     };
     try {
@@ -555,6 +574,7 @@ export class DepartmentsService {
       payload.sub !== userId ||
       payload.sid !== sessionId ||
       payload.departmentId !== departmentId ||
+      !payload.assignmentId ||
       !payload.tenantId
     ) {
       throw new UnauthorizedException('Invalid department access');
@@ -572,6 +592,7 @@ export class DepartmentsService {
         status: 'ACTIVE',
         assignments: {
           some: {
+            id: payload.assignmentId,
             departmentId,
             status: 'ACTIVE',
           },
@@ -586,8 +607,8 @@ export class DepartmentsService {
         firstName: true,
         lastName: true,
         assignments: {
-          where: { departmentId, status: 'ACTIVE' },
-          select: { role: true, accessLevel: true },
+          where: { id: payload.assignmentId, departmentId, status: 'ACTIVE' },
+          select: { role: true, accessLevel: true, branchId: true },
           take: 1,
         },
       },
@@ -611,7 +632,11 @@ export class DepartmentsService {
       },
     });
 
-    if (!staffProfile || !department) {
+    if (
+      !staffProfile ||
+      !department ||
+      staffProfile.assignments[0]?.branchId !== payload.branchId
+    ) {
       throw new ForbiddenException('Department assignment is no longer active');
     }
 
@@ -661,6 +686,7 @@ export class DepartmentsService {
         lastName: staffProfile.lastName,
         role: staffProfile.assignments[0]?.role ?? 'Staff',
         accessLevel: staffProfile.assignments[0]?.accessLevel ?? 'VIEW',
+        branchId: staffProfile.assignments[0]?.branchId ?? null,
       },
       metrics: {
         assignedStaff: staffCount,

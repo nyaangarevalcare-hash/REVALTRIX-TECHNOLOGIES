@@ -18,6 +18,7 @@ import { PatientFamilyPage } from './features/patient-family/pages/PatientFamily
 import { FamilyVerificationReviewPage } from './features/patient-family/pages/FamilyVerificationReviewPage.js';
 import { StaffDashboardPage } from './features/staff/pages/StaffDashboardPage.js';
 import { DepartmentWorkspacePage } from './features/staff/pages/DepartmentWorkspacePage.js';
+import { StaffPasswordResetPage } from './features/staff/pages/StaffPasswordResetPage.js';
 import { getMyStaffProfile } from './features/staff/api/staff.api.js';
 import './styles.css';
 
@@ -33,6 +34,7 @@ type Route =
   | { name: 'patient-family' }
   | { name: 'family-verification-review' }
   | { name: 'staff-dashboard' }
+  | { name: 'staff-password-reset' }
   | { name: 'staff-department'; departmentId?: string }
   | { name: 'login' };
 
@@ -75,6 +77,10 @@ function getRoute(): Route {
     return { name: 'staff-dashboard' };
   }
 
+  if (path === '/staff/password-reset') {
+    return { name: 'staff-password-reset' };
+  }
+
   if (path === '/staff/department') {
     const params = new URLSearchParams(window.location.search);
     return { name: 'staff-department', departmentId: params.get('department') ?? undefined };
@@ -110,6 +116,17 @@ function App() {
 
   useEffect(() => {
     if (route.name === 'registration-dashboard') {
+      const hash = window.location.hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      const registrationToken = params.get('registration_token');
+      if (registrationToken?.trim()) {
+        setRegistrationToken(registrationToken.trim());
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+      return;
+    }
+
+    if (route.name === 'staff-password-reset') {
       const hash = window.location.hash.replace(/^#/, '');
       const params = new URLSearchParams(hash);
       const registrationToken = params.get('registration_token');
@@ -191,6 +208,13 @@ function App() {
           return;
         }
 
+        if (!cancelled) {
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      if (route.name === 'staff-password-reset') {
         if (!cancelled) {
           setCheckingSession(false);
         }
@@ -344,6 +368,10 @@ function App() {
         }}
       />
     );
+  }
+
+  if (route.name === 'staff-password-reset') {
+    return <StaffPasswordResetPage />;
   }
 
   if (route.name === 'staff-department') {

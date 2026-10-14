@@ -2689,6 +2689,7 @@ model RegistrationSession {
   id         String    @id @default(uuid()) @db.Uuid
   userId     String    @db.Uuid
   tokenHash  String    @unique @db.VarChar(128)
+  purpose    VerificationPurpose @default(REGISTRATION)
   expiresAt  DateTime  @db.Timestamptz(6)
   consumedAt DateTime? @db.Timestamptz(6)
   lastUsedAt DateTime? @db.Timestamptz(6)

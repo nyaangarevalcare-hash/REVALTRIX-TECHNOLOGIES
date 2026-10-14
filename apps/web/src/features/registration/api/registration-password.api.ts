@@ -12,6 +12,13 @@ export interface SetRegistrationPasswordResponse {
   registrationStatus: string;
   verificationStatus: string;
   onboardingStatus: string;
+  authentication?: {
+    accessToken: string;
+    refreshToken: string;
+    sessionId: string;
+    expiresAt: string;
+    userId: string;
+  };
 }
 
 function registrationHeaders(): HeadersInit {
@@ -27,27 +34,21 @@ function registrationHeaders(): HeadersInit {
 }
 
 export async function getRegistrationPasswordStatus(): Promise<RegistrationPasswordStatus> {
-  return apiRequest<RegistrationPasswordStatus>(
-    '/v1/registration/password/status',
-    {
-      headers: registrationHeaders(),
-    },
-  );
+  return apiRequest<RegistrationPasswordStatus>('/v1/registration/password/status', {
+    headers: registrationHeaders(),
+  });
 }
 
 export async function setRegistrationPassword(
   password: string,
   confirmPassword: string,
 ): Promise<SetRegistrationPasswordResponse> {
-  return apiRequest<SetRegistrationPasswordResponse>(
-    '/v1/registration/password',
-    {
-      method: 'PATCH',
-      headers: registrationHeaders(),
-      body: JSON.stringify({
-        password,
-        confirmPassword,
-      }),
-    },
-  );
+  return apiRequest<SetRegistrationPasswordResponse>('/v1/registration/password', {
+    method: 'PATCH',
+    headers: registrationHeaders(),
+    body: JSON.stringify({
+      password,
+      confirmPassword,
+    }),
+  });
 }

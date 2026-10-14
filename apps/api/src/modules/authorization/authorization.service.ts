@@ -162,6 +162,76 @@ export class AuthorizationService {
     return context;
   }
 
+  async assertFeatureAvailable(userId: string, resource: string, tenantId?: string): Promise<void> {
+    if (tenantId) {
+      const now = new Date();
+      const membership = await this.database.client.membership.findFirst({
+        where: {
+          userId,
+          tenantId,
+          status: 'ACTIVE',
+          startsAt: { lte: now },
+          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+          tenant: { status: 'ACTIVE', deletedAt: null },
+        },
+        select: { id: true },
+      });
+      if (!membership) {
+        throw new ForbiddenException('Active organization membership is required');
+      }
+    }
+    const featureTenantId = tenantId ?? (await this.getContext(userId)).tenantId;
+    if (!(await this.hasTenantFeature(featureTenantId, resource))) {
+      throw new ForbiddenException('This module is not available for your tenant type.');
+    }
+  }
+
+  async hasExplicitDeny(
+    userId: string,
+    required: RequiredPermission,
+    tenantId?: string,
+  ): Promise<boolean> {
+    let roleIds: string[];
+    if (tenantId) {
+      const membership = await this.database.client.membership.findFirst({
+        where: {
+          userId,
+          tenantId,
+          status: 'ACTIVE',
+          startsAt: { lte: new Date() },
+          OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }],
+          tenant: { status: 'ACTIVE', deletedAt: null },
+        },
+        select: {
+          roles: {
+            where: { role: { status: 'ACTIVE' } },
+            select: { roleId: true },
+          },
+        },
+      });
+      roleIds = membership?.roles.map((role) => role.roleId) ?? [];
+    } else {
+      roleIds = (await this.getContext(userId)).roleIds;
+    }
+    if (roleIds.length === 0) {
+      return false;
+    }
+    const permissionTenantId = tenantId ?? (await this.getContext(userId)).tenantId;
+    const permissions = await this.database.client.permission.findMany({
+      where: {
+        resource: required.resource,
+        action: required.action,
+        scope: 'TENANT',
+        status: 'ACTIVE',
+        OR: [{ tenantId: null }, { tenantId: permissionTenantId }],
+        effect: 'DENY',
+        roles: { some: { roleId: { in: roleIds } } },
+      },
+      select: { id: true },
+    });
+    return permissions.length > 0;
+  }
+
   async hasPlatformPermission(userId: string, required: RequiredPermission): Promise<boolean> {
     const permissions = await this.database.client.permission.findMany({
       where: {

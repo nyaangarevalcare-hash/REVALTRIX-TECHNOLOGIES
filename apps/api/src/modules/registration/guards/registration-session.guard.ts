@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { DatabaseService } from '../../../database/database.service.js';
@@ -12,6 +7,7 @@ export interface RegistrationAuthenticatedRequest extends Request {
   registrationAuth: {
     userId: string;
     registrationSessionId: string;
+    purpose: string;
   };
 }
 
@@ -20,8 +16,7 @@ export class RegistrationSessionGuard implements CanActivate {
   constructor(private readonly database: DatabaseService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request =
-      context.switchToHttp().getRequest<RegistrationAuthenticatedRequest>();
+    const request = context.switchToHttp().getRequest<RegistrationAuthenticatedRequest>();
 
     const header = request.headers['x-registration-token'];
 
@@ -29,27 +24,25 @@ export class RegistrationSessionGuard implements CanActivate {
       throw new UnauthorizedException('Registration session required');
     }
 
-    const tokenHash = createHash('sha256')
-      .update(header.trim())
-      .digest('hex');
+    const tokenHash = createHash('sha256').update(header.trim()).digest('hex');
 
-    const session =
-      await this.database.client.registrationSession.findUnique({
-        where: { tokenHash },
-        select: {
-          id: true,
-          userId: true,
-          expiresAt: true,
-          consumedAt: true,
-          user: {
-            select: {
-              id: true,
-              status: true,
-              deletedAt: true,
-            },
+    const session = await this.database.client.registrationSession.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        userId: true,
+        purpose: true,
+        expiresAt: true,
+        consumedAt: true,
+        user: {
+          select: {
+            id: true,
+            status: true,
+            deletedAt: true,
           },
         },
-      });
+      },
+    });
 
     if (
       !session ||
@@ -58,9 +51,7 @@ export class RegistrationSessionGuard implements CanActivate {
       session.user.status !== 'ACTIVE' ||
       session.user.deletedAt !== null
     ) {
-      throw new UnauthorizedException(
-        'Registration session is invalid or expired',
-      );
+      throw new UnauthorizedException('Registration session is invalid or expired');
     }
 
     await this.database.client.registrationSession.update({
@@ -71,6 +62,7 @@ export class RegistrationSessionGuard implements CanActivate {
     request.registrationAuth = {
       userId: session.userId,
       registrationSessionId: session.id,
+      purpose: session.purpose,
     };
 
     return true;

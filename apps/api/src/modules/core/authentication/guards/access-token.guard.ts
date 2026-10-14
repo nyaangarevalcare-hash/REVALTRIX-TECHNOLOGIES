@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { TokenService } from '../token.service.js';
 import { SessionService } from '../../sessions/session.service.js';
@@ -12,6 +7,14 @@ export interface AuthenticatedRequest extends Request {
   auth: {
     userId: string;
     sessionId: string;
+  };
+  departmentAccess?: {
+    tenantId: string;
+    departmentId: string;
+    branchId: string | null;
+    accessLevel: string;
+    role: string;
+    canGrantPermission: boolean;
   };
 }
 
@@ -23,8 +26,7 @@ export class AccessTokenGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request =
-      context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
     const authorization = request.headers.authorization;
 
@@ -40,17 +42,11 @@ export class AccessTokenGuard implements CanActivate {
 
     const payload = await this.tokenService.verifyAccessToken(token);
 
-    if (
-      payload.type !== 'access' ||
-      !payload.sub ||
-      !payload.sid
-    ) {
+    if (payload.type !== 'access' || !payload.sub || !payload.sid) {
       throw new UnauthorizedException('Invalid access token');
     }
 
-    const session = await this.sessionService.findActiveSession(
-      payload.sid,
-    );
+    const session = await this.sessionService.findActiveSession(payload.sid);
 
     if (!session || session.userId !== payload.sub) {
       throw new UnauthorizedException('Session is no longer active');

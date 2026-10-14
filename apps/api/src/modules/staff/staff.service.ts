@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Injectable,
   Logger,
@@ -10,6 +12,8 @@ import {
   Prisma,
   RegistrationStatus,
   RegistrationType,
+  StaffStatus,
+  VerificationPurpose,
   VerificationStatus,
 } from '@prisma/client';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
@@ -17,6 +21,8 @@ import { DatabaseService } from '../../database/database.service.js';
 import { VerificationService } from '../verification/verification.service.js';
 import { VerificationEmailService } from '../communication/email/verification-email.service.js';
 import type { CreateStaffDto } from './dto/create-staff.dto.js';
+import type { AssignStaffDepartmentDto } from './dto/assign-staff-department.dto.js';
+import type { CreateStaffShiftDto } from './dto/create-staff-shift.dto.js';
 
 @Injectable()
 export class StaffService {
@@ -33,20 +39,30 @@ export class StaffService {
     const staff = await this.database.client.staffProfile.findMany({
       where: {
         tenantId,
-        status: { not: 'OFFBOARDED' },
       },
       select: {
         id: true,
+        hospitalId: true,
+        departmentId: true,
+        branchId: true,
+        reportsToId: true,
         staffNumber: true,
         firstName: true,
         lastName: true,
         email: true,
         phone: true,
+        profilePhotoUrl: true,
         jobTitle: true,
         employmentType: true,
+        licenseNumber: true,
+        specialty: true,
+        qualifications: true,
         status: true,
         joinedAt: true,
         createdAt: true,
+        updatedAt: true,
+        branch: { select: { id: true, name: true, code: true } },
+        reportsTo: { select: { id: true, firstName: true, lastName: true } },
         user: {
           select: {
             identities: {
@@ -62,22 +78,46 @@ export class StaffService {
           },
         },
         assignments: {
-          where: { status: 'ACTIVE' },
           select: {
             id: true,
             role: true,
             accessLevel: true,
             isPrimaryDepartment: true,
+            assignedById: true,
+            assignedAt: true,
             status: true,
+            createdAt: true,
+            updatedAt: true,
             department: {
               select: {
                 id: true,
                 name: true,
                 code: true,
+                status: true,
               },
             },
+            branch: { select: { id: true, name: true, code: true } },
           },
           orderBy: { assignedAt: 'asc' },
+        },
+        shifts: {
+          where: { status: 'ACTIVE' },
+          select: {
+            id: true,
+            staffProfileId: true,
+            departmentId: true,
+            branchId: true,
+            shiftName: true,
+            startTime: true,
+            endTime: true,
+            daysOfWeek: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            department: { select: { id: true, name: true, code: true } },
+            branch: { select: { id: true, name: true, code: true } },
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
@@ -182,6 +222,20 @@ export class StaffService {
       throw new NotFoundException('Department not found in this organization');
     }
 
+    if (dto.reportsToId) {
+      const manager = await this.database.client.staffProfile.findFirst({
+        where: {
+          id: dto.reportsToId,
+          tenantId,
+          status: StaffStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      if (!manager) {
+        throw new NotFoundException('Reporting manager not found in this organization');
+      }
+    }
+
     const branchId = dto.branchId ?? department.branchId;
     if (branchId) {
       const branch = await this.database.client.branch.findFirst({
@@ -261,6 +315,11 @@ export class StaffService {
             email,
             phone: dto.phone?.trim() || null,
             jobTitle: dto.jobTitle?.trim() || null,
+            employmentType: dto.employmentType ?? 'FULL_TIME',
+            reportsToId: dto.reportsToId ?? null,
+            licenseNumber: dto.licenseNumber?.trim() || null,
+            specialty: dto.specialty?.trim() || null,
+            qualifications: dto.qualifications?.trim() || null,
             joinedAt: new Date(),
           },
           select: {
@@ -284,6 +343,24 @@ export class StaffService {
             assignedById: userId,
           },
         });
+        if (dto.shiftName?.trim()) {
+          if (!dto.shiftStartTime || !dto.shiftEndTime || !dto.shiftDays?.length) {
+            throw new BadRequestException(
+              'Shift name, start and end times, and at least one shift day are required',
+            );
+          }
+          await tx.staffShift.create({
+            data: {
+              staffProfileId: profile.id,
+              departmentId: department.id,
+              branchId: branchId ?? null,
+              shiftName: dto.shiftName.trim(),
+              startTime: dto.shiftStartTime,
+              endTime: dto.shiftEndTime,
+              daysOfWeek: dto.shiftDays,
+            },
+          });
+        }
         await tx.registration.create({
           data: {
             userId: user.id,
@@ -292,6 +369,22 @@ export class StaffService {
             status: RegistrationStatus.VERIFICATION_REQUIRED,
             verificationStatus: VerificationStatus.PENDING,
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+        await tx.auditEvent.create({
+          data: {
+            tenantId,
+            actorUserId: userId,
+            branchId: branchId ?? null,
+            action: 'staff.invited',
+            resourceType: 'staff_profile',
+            resourceId: profile.id,
+            outcome: 'SUCCESS',
+            metadata: {
+              departmentId: department.id,
+              role: dto.role.trim(),
+              accessLevel: dto.accessLevel ?? 'OPERATE',
+            },
           },
         });
         return { profile, userId: user.id };
@@ -354,21 +447,94 @@ export class StaffService {
       return { invitationStatus: 'VERIFICATION_EMAIL_SENT' };
     }
 
-    await this.database.client.registrationSession.updateMany({
+    return { invitationStatus: 'ADMIN_APPROVAL_REQUIRED' };
+  }
+
+  async approveStaff(userId: string, staffProfileId: string) {
+    const tenantId = await this.getTenantIdForUser(userId);
+    const profile = await this.database.client.staffProfile.findFirst({
+      where: {
+        id: staffProfileId,
+        tenantId,
+        status: StaffStatus.ACTIVE,
+      },
+      select: {
+        id: true,
+        userId: true,
+        email: true,
+        branchId: true,
+        user: {
+          select: {
+            identities: {
+              where: { type: IdentityType.EMAIL, status: 'ACTIVE' },
+              select: { verifiedAt: true, credentialHash: true },
+            },
+          },
+        },
+      },
+    });
+    if (!profile) {
+      throw new NotFoundException('Active staff member not found');
+    }
+    const emailIdentity = profile.user.identities[0];
+    if (!emailIdentity?.verifiedAt) {
+      throw new BadRequestException('Verify the staff email address before approving the account');
+    }
+    if (emailIdentity.credentialHash) {
+      throw new ConflictException('This staff member already has a password configured');
+    }
+    const registration = await this.database.client.registration.findFirst({
       where: {
         userId: profile.userId,
-        consumedAt: null,
+        tenantId,
+        type: RegistrationType.TENANT,
+        status: {
+          in: [RegistrationStatus.VERIFICATION_REQUIRED, RegistrationStatus.ONBOARDING],
+        },
+        verificationStatus: VerificationStatus.VERIFIED,
       },
-      data: { consumedAt: new Date() },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
     });
+    if (!registration) {
+      throw new BadRequestException('Verified staff registration was not found');
+    }
+
     const token = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-    await this.database.client.registrationSession.create({
-      data: {
-        userId: profile.userId,
-        tokenHash: createHash('sha256').update(token).digest('hex'),
-        expiresAt,
-      },
+    await this.database.client.$transaction(async (tx) => {
+      await tx.registrationSession.updateMany({
+        where: { userId: profile.userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await tx.registrationSession.create({
+        data: {
+          userId: profile.userId,
+          tokenHash,
+          expiresAt,
+          purpose: VerificationPurpose.REGISTRATION,
+        },
+      });
+      await tx.registration.update({
+        where: { id: registration.id },
+        data: {
+          status: RegistrationStatus.ONBOARDING,
+          onboardingStatus: 'IN_PROGRESS',
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          actorUserId: userId,
+          branchId: profile.branchId,
+          action: 'staff.registration.approved',
+          resourceType: 'staff_profile',
+          resourceId: profile.id,
+          outcome: 'SUCCESS',
+          metadata: { registrationId: registration.id },
+        },
+      });
     });
     try {
       await this.verificationEmailService.sendStaffPasswordSetup(profile.email, token, expiresAt);
@@ -377,17 +543,372 @@ export class StaffService {
         where: {
           userId: profile.userId,
           consumedAt: null,
-          tokenHash: createHash('sha256').update(token).digest('hex'),
+          tokenHash,
         },
         data: { consumedAt: new Date() },
       });
       this.logger.error(
-        'Staff password setup email could not be delivered',
+        'Approved staff password setup email could not be delivered',
         error instanceof Error ? error.stack : undefined,
       );
-      return { invitationStatus: 'EMAIL_DELIVERY_FAILED' };
+      throw new HttpException('Password setup email could not be delivered', 503);
     }
-    return { invitationStatus: 'PASSWORD_SETUP_EMAIL_SENT' };
+    return { approvalStatus: 'APPROVED', passwordSetupEmailStatus: 'SENT' as const };
+  }
+
+  async getAccessHistory(userId: string, staffProfileId: string) {
+    const tenantId = await this.getTenantIdForUser(userId);
+    const staff = await this.database.client.staffProfile.findFirst({
+      where: { id: staffProfileId, tenantId },
+      select: { id: true },
+    });
+    if (!staff) {
+      throw new NotFoundException('Staff member not found');
+    }
+    return this.database.client.departmentAccessAttempt.findMany({
+      where: { staffProfileId },
+      select: {
+        id: true,
+        userId: true,
+        departmentId: true,
+        status: true,
+        ipAddress: true,
+        userAgent: true,
+        createdAt: true,
+        department: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  async assignDepartment(userId: string, staffProfileId: string, dto: AssignStaffDepartmentDto) {
+    const tenantId = await this.getTenantIdForUser(userId);
+    const staff = await this.database.client.staffProfile.findFirst({
+      where: { id: staffProfileId, tenantId, status: StaffStatus.ACTIVE },
+      select: { id: true, userId: true, branchId: true },
+    });
+    if (!staff) {
+      throw new NotFoundException('Staff member not found');
+    }
+    const department = await this.database.client.department.findFirst({
+      where: {
+        id: dto.departmentId,
+        tenantId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: { id: true, branchId: true },
+    });
+    if (!department) {
+      throw new NotFoundException('Department not found in this organization');
+    }
+    const branchId = dto.branchId ?? department.branchId ?? staff.branchId;
+    await this.validateBranch(tenantId, branchId);
+    const isPrimaryDepartment = dto.isPrimaryDepartment ?? false;
+
+    return this.database.client.$transaction(async (tx) => {
+      if (isPrimaryDepartment) {
+        await tx.staffDepartmentAssignment.updateMany({
+          where: { staffProfileId, status: 'ACTIVE' },
+          data: { isPrimaryDepartment: false },
+        });
+      }
+      const assignment = await tx.staffDepartmentAssignment.upsert({
+        where: {
+          staffProfileId_departmentId_role: {
+            staffProfileId,
+            departmentId: department.id,
+            role: dto.role.trim(),
+          },
+        },
+        create: {
+          staffProfileId,
+          departmentId: department.id,
+          branchId,
+          role: dto.role.trim(),
+          accessLevel: dto.accessLevel,
+          isPrimaryDepartment,
+          assignedById: userId,
+          status: 'ACTIVE',
+        },
+        update: {
+          branchId,
+          accessLevel: dto.accessLevel,
+          isPrimaryDepartment,
+          assignedById: userId,
+          assignedAt: new Date(),
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          departmentId: true,
+          branchId: true,
+          role: true,
+          accessLevel: true,
+          isPrimaryDepartment: true,
+          status: true,
+        },
+      });
+      const membership = await tx.membership.findFirst({
+        where: {
+          userId: staff.userId,
+          tenantId,
+          departmentId: department.id,
+          branchId,
+        },
+        select: { id: true },
+      });
+      if (membership) {
+        await tx.membership.update({
+          where: { id: membership.id },
+          data: { status: 'ACTIVE' },
+        });
+      } else {
+        await tx.membership.create({
+          data: {
+            userId: staff.userId,
+            tenantId,
+            branchId,
+            departmentId: department.id,
+            status: 'ACTIVE',
+          },
+        });
+      }
+      if (isPrimaryDepartment) {
+        await tx.staffProfile.update({
+          where: { id: staffProfileId },
+          data: { departmentId: department.id, branchId },
+        });
+      }
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          actorUserId: userId,
+          branchId,
+          action: 'staff.department.assigned',
+          resourceType: 'staff_department_assignment',
+          resourceId: assignment.id,
+          outcome: 'SUCCESS',
+          metadata: {
+            staffProfileId,
+            departmentId: department.id,
+            role: dto.role.trim(),
+            accessLevel: dto.accessLevel,
+            isPrimaryDepartment,
+          },
+        },
+      });
+      return assignment;
+    });
+  }
+
+  async createShift(userId: string, staffProfileId: string, dto: CreateStaffShiftDto) {
+    const tenantId = await this.getTenantIdForUser(userId);
+    const staff = await this.database.client.staffProfile.findFirst({
+      where: {
+        id: staffProfileId,
+        tenantId,
+        status: StaffStatus.ACTIVE,
+        assignments: {
+          some: { departmentId: dto.departmentId, status: 'ACTIVE' },
+        },
+      },
+      select: { id: true, branchId: true },
+    });
+    if (!staff) {
+      throw new ForbiddenException('Staff member must have an active department assignment');
+    }
+    const department = await this.database.client.department.findFirst({
+      where: {
+        id: dto.departmentId,
+        tenantId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: { id: true, branchId: true },
+    });
+    if (!department) {
+      throw new NotFoundException('Department not found in this organization');
+    }
+    const branchId = dto.branchId ?? department.branchId ?? staff.branchId;
+    await this.validateBranch(tenantId, branchId);
+    const shift = await this.database.client.$transaction(async (tx) => {
+      const created = await tx.staffShift.create({
+        data: {
+          staffProfileId,
+          departmentId: department.id,
+          branchId,
+          shiftName: dto.shiftName.trim(),
+          startTime: dto.startTime,
+          endTime: dto.endTime,
+          daysOfWeek: dto.daysOfWeek,
+          status: dto.status ?? 'ACTIVE',
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          actorUserId: userId,
+          branchId,
+          action: 'staff.shift.assigned',
+          resourceType: 'staff_shift',
+          resourceId: created.id,
+          outcome: 'SUCCESS',
+          metadata: { staffProfileId, departmentId: department.id },
+        },
+      });
+      return created;
+    });
+    return shift;
+  }
+
+  async updateStatus(userId: string, staffProfileId: string, status: StaffStatus) {
+    const tenantId = await this.getTenantIdForUser(userId);
+    const staff = await this.database.client.staffProfile.findFirst({
+      where: { id: staffProfileId, tenantId },
+      select: { id: true, userId: true, branchId: true, status: true },
+    });
+    if (!staff) {
+      throw new NotFoundException('Staff member not found');
+    }
+    if (staff.status === StaffStatus.OFFBOARDED && status !== StaffStatus.OFFBOARDED) {
+      throw new ForbiddenException('Offboarded staff members cannot be reactivated');
+    }
+    return this.database.client.$transaction(async (tx) => {
+      const suspended = status === StaffStatus.SUSPENDED;
+      const offboarded = status === StaffStatus.OFFBOARDED;
+      const updated = await tx.staffProfile.update({
+        where: { id: staffProfileId },
+        data: { status },
+        select: { id: true, status: true, updatedAt: true },
+      });
+      if (suspended || offboarded) {
+        await tx.staffDepartmentAssignment.updateMany({
+          where: { staffProfileId, status: 'ACTIVE' },
+          data: { status: offboarded ? 'REVOKED' : 'SUSPENDED' },
+        });
+        await tx.staffShift.updateMany({
+          where: { staffProfileId, status: 'ACTIVE' },
+          data: { status: offboarded ? 'INACTIVE' : 'SUSPENDED' },
+        });
+        await tx.membership.updateMany({
+          where: { userId: staff.userId, tenantId, status: 'ACTIVE' },
+          data: { status: offboarded ? 'REVOKED' : 'SUSPENDED' },
+        });
+      } else if (status === StaffStatus.ACTIVE && staff.status !== StaffStatus.ACTIVE) {
+        await tx.staffDepartmentAssignment.updateMany({
+          where: { staffProfileId, status: 'SUSPENDED' },
+          data: { status: 'ACTIVE' },
+        });
+        await tx.staffShift.updateMany({
+          where: { staffProfileId, status: 'SUSPENDED' },
+          data: { status: 'ACTIVE' },
+        });
+        await tx.membership.updateMany({
+          where: { userId: staff.userId, tenantId, status: 'SUSPENDED' },
+          data: { status: 'ACTIVE' },
+        });
+      }
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          actorUserId: userId,
+          branchId: staff.branchId,
+          action: `staff.status.${status.toLowerCase()}`,
+          resourceType: 'staff_profile',
+          resourceId: staffProfileId,
+          outcome: 'SUCCESS',
+          metadata: { previousStatus: staff.status, status },
+        },
+      });
+      return updated;
+    });
+  }
+
+  async sendPasswordReset(userId: string, staffProfileId: string) {
+    const tenantId = await this.getTenantIdForUser(userId);
+    const profile = await this.database.client.staffProfile.findFirst({
+      where: { id: staffProfileId, tenantId, status: StaffStatus.ACTIVE },
+      select: {
+        id: true,
+        userId: true,
+        email: true,
+        branchId: true,
+        user: {
+          select: {
+            identities: {
+              where: { type: IdentityType.EMAIL, status: 'ACTIVE' },
+              select: { verifiedAt: true, normalizedValue: true },
+            },
+          },
+        },
+      },
+    });
+    if (!profile) {
+      throw new NotFoundException('Active staff member not found');
+    }
+    if (!profile.user.identities[0]?.verifiedAt) {
+      throw new BadRequestException('Verify the staff email address before resetting its password');
+    }
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    await this.database.client.$transaction(async (tx) => {
+      await tx.registrationSession.updateMany({
+        where: { userId: profile.userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await tx.registrationSession.create({
+        data: {
+          userId: profile.userId,
+          tokenHash,
+          expiresAt,
+          purpose: VerificationPurpose.PASSWORD_RESET,
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId,
+          actorUserId: userId,
+          branchId: profile.branchId,
+          action: 'staff.password_reset.requested',
+          resourceType: 'staff_profile',
+          resourceId: profile.id,
+          outcome: 'SUCCESS',
+        },
+      });
+    });
+    try {
+      await this.verificationEmailService.sendStaffPasswordReset(profile.email, token, expiresAt);
+    } catch (error) {
+      await this.database.client.registrationSession.updateMany({
+        where: { userId: profile.userId, tokenHash, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      this.logger.error(
+        'Staff password reset email could not be delivered',
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new HttpException('Password reset email could not be delivered', 503);
+    }
+    return { resetEmailStatus: 'SENT' as const };
+  }
+
+  private async validateBranch(
+    tenantId: string,
+    branchId: string | null | undefined,
+  ): Promise<void> {
+    if (!branchId) {
+      return;
+    }
+    const branch = await this.database.client.branch.findFirst({
+      where: { id: branchId, tenantId, status: 'ACTIVE', deletedAt: null },
+      select: { id: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found in this organization');
+    }
   }
 
   private async getTenantIdForUser(userId: string): Promise<string> {
