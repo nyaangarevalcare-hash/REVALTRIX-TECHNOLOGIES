@@ -20,6 +20,7 @@ import type {
 interface ServiceFormState {
   name: string;
   code: string;
+  price: string;
   description: string;
   category: string;
   durationMin: string;
@@ -30,6 +31,7 @@ interface ServiceFormState {
 const emptyForm: ServiceFormState = {
   name: '',
   code: '',
+  price: '0',
   description: '',
   category: '',
   durationMin: '',
@@ -66,6 +68,24 @@ export function ServicesPage() {
         : null,
     [editingId, services],
   );
+
+  const generatedCodePreview = useMemo(() => {
+    const base = form.name
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50) || 'SERVICE';
+    let attempt = 0;
+    let candidate = base;
+    while (services.some((service) => service.code === candidate && service.id !== editingId)) {
+      attempt += 1;
+      const suffix = `-${attempt + 1}`;
+      candidate = `${base.slice(0, 50 - suffix.length)}${suffix}`;
+    }
+    return candidate;
+  }, [form.name, services, editingId]);
 
   async function loadData() {
     setLoading(true);
@@ -116,6 +136,7 @@ export function ServicesPage() {
     setForm({
       name: service.name,
       code: service.code,
+      price: Number(service.price).toFixed(2),
       description:
         service.description ?? '',
       category:
@@ -160,6 +181,11 @@ export function ServicesPage() {
         );
       }
 
+      const price = Number(form.price);
+      if (!Number.isFinite(price) || price < 0 || price > 9999999999.99) {
+        throw new Error('Price must be a nonnegative amount with up to two decimal places');
+      }
+
       if (
         form.departmentId &&
         form.branchId
@@ -185,7 +211,7 @@ export function ServicesPage() {
       if (editingId) {
         const input: UpdateServiceInput = {
           name: form.name,
-          code: form.code,
+          price,
           description:
             form.description,
           category: form.category,
@@ -207,7 +233,7 @@ export function ServicesPage() {
       } else {
         const input: CreateServiceInput = {
           name: form.name,
-          code: form.code,
+          price,
           description:
             form.description || undefined,
           category:
@@ -393,17 +419,23 @@ export function ServicesPage() {
               </label>
 
               <label>
-                Service code
+                Service code (generated)
                 <input
-                  value={form.code}
-                  onChange={(event) =>
-                    updateField(
-                      'code',
-                      event.target.value,
-                    )
-                  }
-                  minLength={2}
-                  maxLength={50}
+                  value={editingId ? form.code : generatedCodePreview}
+                  readOnly
+                  aria-readonly="true"
+                />
+              </label>
+
+              <label>
+                Price
+                <input
+                  type="number"
+                  min={0}
+                  max={9999999999.99}
+                  step="0.01"
+                  value={form.price}
+                  onChange={(event) => updateField('price', event.target.value)}
                   required
                 />
               </label>
@@ -582,6 +614,7 @@ export function ServicesPage() {
                     <th>Department</th>
                     <th>Branch</th>
                     <th>Duration</th>
+                    <th>Price</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -623,6 +656,8 @@ export function ServicesPage() {
                             ? `${service.durationMin} min`
                             : '—'}
                         </td>
+
+                        <td>{Number(service.price).toFixed(2)}</td>
 
                         <td>
                           <div className="tenant-table-actions">

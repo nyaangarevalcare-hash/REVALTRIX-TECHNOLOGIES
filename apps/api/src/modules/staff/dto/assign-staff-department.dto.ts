@@ -2,6 +2,7 @@ import { DepartmentAccessLevel } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
+  IsDateString,
   IsOptional,
   IsString,
   IsUUID,
@@ -28,4 +29,16 @@ export class AssignStaffDepartmentDto {
   @IsOptional()
   @IsBoolean()
   isPrimaryDepartment?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  canAccessDashboard?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  startsAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endsAt?: string;
 }

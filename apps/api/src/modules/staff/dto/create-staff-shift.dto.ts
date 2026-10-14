@@ -33,6 +33,16 @@ export class CreateStaffShiftDto {
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
   endTime!: string;
 
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  breakStartTime?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  breakEndTime?: string;
+
   @IsArray()
   @ArrayMaxSize(7)
   @IsIn(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], { each: true })

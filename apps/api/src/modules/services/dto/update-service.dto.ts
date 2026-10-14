@@ -1,4 +1,5 @@
 import {
+  IsNumber,
   IsInt,
   IsOptional,
   IsString,
@@ -17,10 +18,10 @@ export class UpdateServiceDto {
   name?: string;
 
   @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(50)
-  code?: string;
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(9999999999.99)
+  price?: number;
 
   @IsOptional()
   @IsString()

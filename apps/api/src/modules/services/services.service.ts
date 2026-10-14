@@ -69,6 +69,7 @@ export class ServicesService {
         branchId: true,
         name: true,
         code: true,
+        price: true,
         description: true,
         category: true,
         durationMin: true,
@@ -105,9 +106,7 @@ export class ServicesService {
     const tenantId = await this.getTenantIdForUser(userId);
 
     const name = input.name.trim();
-    const code = input.code.trim().toUpperCase();
-
-    await this.ensureUniqueCode(tenantId, code);
+    const code = await this.generateServiceCode(tenantId, name);
 
     await this.validateReferences(tenantId, input.departmentId, input.branchId);
 
@@ -116,6 +115,7 @@ export class ServicesService {
         tenantId,
         name,
         code,
+        price: input.price,
         description: input.description?.trim() || null,
         category: input.category?.trim() || null,
         durationMin: input.durationMin ?? null,
@@ -129,6 +129,7 @@ export class ServicesService {
         branchId: true,
         name: true,
         code: true,
+        price: true,
         description: true,
         category: true,
         durationMin: true,
@@ -174,12 +175,6 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
-    const code = input.code !== undefined ? input.code.trim().toUpperCase() : undefined;
-
-    if (code !== undefined) {
-      await this.ensureUniqueCode(tenantId, code, serviceId);
-    }
-
     const departmentId =
       input.departmentId !== undefined ? input.departmentId : existing.departmentId;
 
@@ -189,7 +184,7 @@ export class ServicesService {
 
     const data: {
       name?: string;
-      code?: string;
+      price?: number;
       description?: string | null;
       category?: string | null;
       durationMin?: number | null;
@@ -201,9 +196,7 @@ export class ServicesService {
       data.name = input.name.trim();
     }
 
-    if (code !== undefined) {
-      data.code = code;
-    }
+    if (input.price !== undefined) data.price = input.price;
 
     if (input.description !== undefined) {
       data.description = input.description.trim() || null;
@@ -241,6 +234,7 @@ export class ServicesService {
         branchId: true,
         name: true,
         code: true,
+        price: true,
         description: true,
         category: true,
         durationMin: true,
@@ -282,6 +276,7 @@ export class ServicesService {
         branchId: true,
         name: true,
         code: true,
+        price: true,
         description: true,
         category: true,
         durationMin: true,
@@ -347,32 +342,25 @@ export class ServicesService {
     };
   }
 
-  private async ensureUniqueCode(
-    tenantId: string,
-    code: string,
-    currentServiceId?: string,
-  ): Promise<void> {
-    const existing = await this.database.client.service.findFirst({
-      where: {
-        tenantId,
-        code,
-        deletedAt: null,
-        ...(currentServiceId
-          ? {
-              id: {
-                not: currentServiceId,
-              },
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-      },
-    });
+  private async generateServiceCode(tenantId: string, name: string): Promise<string> {
+    const base = name
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50) || 'SERVICE';
 
-    if (existing) {
-      throw new ConflictException('A service with this code already exists');
+    for (let attempt = 0; attempt < 10000; attempt += 1) {
+      const suffix = attempt === 0 ? '' : `-${attempt + 1}`;
+      const candidate = `${base.slice(0, 50 - suffix.length)}${suffix}`;
+      const existing = await this.database.client.service.findFirst({
+        where: { tenantId, code: candidate },
+        select: { id: true },
+      });
+      if (!existing) return candidate;
     }
+    throw new ConflictException('Unable to generate a unique service code');
   }
 
   private async validateReferences(

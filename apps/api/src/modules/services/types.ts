@@ -1,6 +1,6 @@
 export interface CreateServiceDto {
   name: string;
-  code: string;
+  price: number;
   description?: string;
   category?: string;
   durationMin?: number;
@@ -10,7 +10,7 @@ export interface CreateServiceDto {
 
 export interface UpdateServiceDto {
   name?: string;
-  code?: string;
+  price?: number;
   description?: string;
   category?: string;
   durationMin?: number;

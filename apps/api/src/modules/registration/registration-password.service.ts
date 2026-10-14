@@ -88,7 +88,7 @@ export class RegistrationPasswordService {
             where: {
               userId,
               tenant: { status: 'ACTIVE', deletedAt: null },
-              status: 'ACTIVE',
+              status: { in: ['ACTIVE', 'INVITED'] },
             },
             select: { id: true, tenantId: true },
           })
@@ -136,6 +136,10 @@ export class RegistrationPasswordService {
             onboardingStatus: OnboardingStatus.COMPLETED,
             completedAt: new Date(),
           },
+        });
+        await tx.staffProfile.update({
+          where: { id: staffProfile.id },
+          data: { status: 'ACTIVE', invitationStatus: 'ACCEPTED' },
         });
         await tx.auditEvent.create({
           data: {

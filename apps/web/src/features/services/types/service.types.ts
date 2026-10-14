@@ -17,6 +17,7 @@ export interface Service {
   branchId: string | null;
   name: string;
   code: string;
+  price: number | string;
   description: string | null;
   category: string | null;
   durationMin: number | null;
@@ -29,7 +30,7 @@ export interface Service {
 
 export interface CreateServiceInput {
   name: string;
-  code: string;
+  price: number;
   description?: string;
   category?: string;
   durationMin?: number;
@@ -39,7 +40,7 @@ export interface CreateServiceInput {
 
 export interface UpdateServiceInput {
   name?: string;
-  code?: string;
+  price?: number;
   description?: string;
   category?: string;
   durationMin?: number;

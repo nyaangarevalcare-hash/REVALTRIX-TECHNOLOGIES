@@ -6,16 +6,39 @@ export interface StaffMember {
   reportsToId: string | null;
   staffNumber: string | null;
   firstName: string;
+  middleName: string | null;
   lastName: string;
   email: string;
   phone: string | null;
+  whatsappNumber: string | null;
+  gender: string | null;
+  dateOfBirth: string | null;
+  nationalId: string | null;
+  nationality: string | null;
+  physicalAddress: string | null;
   profilePhotoUrl: string | null;
+  hasProfilePhoto: boolean;
   jobTitle: string | null;
   employmentType: 'FULL_TIME' | 'PART_TIME' | 'LOCUM' | 'CONTRACTOR' | 'VOLUNTEER';
+  professionalCategory: StaffProfessionalCategory | null;
   licenseNumber: string | null;
   specialty: string | null;
+  subSpecialty: string | null;
+  licensingBody: string | null;
+  licenseExpiresAt: string | null;
   qualifications: string | null;
-  status: 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'OFFBOARDED';
+  yearsExperience: number | null;
+  languages: string[];
+  consultationFee: string | number | null;
+  telehealthEnabled: boolean;
+  acceptsOnlineBookings: boolean;
+  acceptsNewPatients: boolean;
+  professionalBio: string | null;
+  professionalLinks: string[];
+  verificationStatus: string;
+  invitationStatus: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+  invitationExpiresAt: string | null;
+  status: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'OFFBOARDED';
   joinedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -32,6 +55,9 @@ export interface StaffDepartmentAssignment {
   role: string;
   accessLevel: string;
   isPrimaryDepartment?: boolean;
+  canAccessDashboard?: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
   status?: string;
   assignedById?: string;
   assignedAt?: string;
@@ -56,6 +82,8 @@ export interface StaffShift {
   shiftName: string;
   startTime: string;
   endTime: string;
+  breakStartTime?: string | null;
+  breakEndTime?: string | null;
   daysOfWeek: string[] | null;
   status: string;
   createdAt: string;
@@ -73,6 +101,56 @@ export interface StaffAccessAttempt {
   userAgent: string | null;
   createdAt: string;
   department: { id: string; name: string; code: string } | null;
+  action?: string;
+  resource?: string;
+  branchId?: string | null;
+}
+
+export type StaffProfessionalCategory =
+  | 'DOCTOR'
+  | 'DENTIST'
+  | 'NURSE'
+  | 'MIDWIFE'
+  | 'PHARMACIST'
+  | 'LAB_SCIENTIST'
+  | 'RADIOGRAPHER'
+  | 'PHYSIOTHERAPIST'
+  | 'NUTRITIONIST'
+  | 'PSYCHOLOGIST'
+  | 'OPTOMETRIST'
+  | 'TECHNICIAN'
+  | 'ADMIN'
+  | 'RECEPTIONIST'
+  | 'OTHER';
+
+export interface StaffDocument {
+  id: string;
+  type: string;
+  status: 'UPLOADED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED' | 'EXPIRED';
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedById: string;
+  reviewedById: string | null;
+  reviewNotes: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  uploadedBy?: { displayName: string };
+  reviewedBy?: { displayName: string } | null;
+}
+
+export interface StaffTimeOff {
+  id: string;
+  staffProfileId: string;
+  startsAt: string;
+  endsAt: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  reason: string | null;
+  reviewNotes: string | null;
+  reviewedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  scheduleConflicts?: string[];
 }
 
 export interface StaffMeResponse {
@@ -90,20 +168,50 @@ export interface StaffMeResponse {
 }
 
 export interface CreateStaffInput {
+  staffNumber?: string | undefined;
   firstName: string;
+  middleName?: string | undefined;
   lastName: string;
   email: string;
-  phone?: string | undefined;
+  phone: string;
+  whatsappNumber?: string | undefined;
+  gender?: string | undefined;
+  dateOfBirth?: string | undefined;
+  nationalId?: string | undefined;
+  nationality?: string | undefined;
+  physicalAddress?: string | undefined;
   departmentId: string;
   role: string;
-  branchId?: string | undefined;
+  branchId: string;
   accessLevel?: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN';
-  jobTitle?: string | undefined;
+  canAccessDashboard?: boolean;
+  assignmentStartsAt?: string | undefined;
+  assignmentEndsAt?: string | undefined;
+  additionalAssignments?: AssignStaffDepartmentInput[] | undefined;
+  jobTitle: string;
   employmentType?: StaffMember['employmentType'];
+  joinedAt?: string | undefined;
   reportsToId?: string | undefined;
   licenseNumber?: string | undefined;
   specialty?: string | undefined;
+  subSpecialty?: string | undefined;
+  licensingBody?: string | undefined;
+  licenseExpiresAt?: string | undefined;
   qualifications?: string | undefined;
+  professionalCategory: StaffProfessionalCategory;
+  yearsExperience?: number | undefined;
+  languages: string[];
+  consultationFee?: number | undefined;
+  telehealthEnabled?: boolean | undefined;
+  acceptsOnlineBookings: boolean;
+  acceptsNewPatients?: boolean | undefined;
+  professionalBio: string;
+  professionalLinks?: string[] | undefined;
+  serviceIds: string[];
+  shiftName: string;
+  shiftStartTime: string;
+  shiftEndTime: string;
+  shiftDays: string[];
 }
 
 export interface CreateStaffResponse {
@@ -117,12 +225,47 @@ export interface CreateStaffResponse {
   invitationStatus: 'VERIFICATION_EMAIL_SENT' | 'EMAIL_DELIVERY_FAILED';
 }
 
+export type UpdateStaffInput = Partial<Pick<
+  CreateStaffInput,
+  | 'firstName'
+  | 'middleName'
+  | 'lastName'
+  | 'phone'
+  | 'whatsappNumber'
+  | 'gender'
+  | 'dateOfBirth'
+  | 'nationalId'
+  | 'nationality'
+  | 'physicalAddress'
+  | 'jobTitle'
+  | 'employmentType'
+  | 'reportsToId'
+  | 'professionalCategory'
+  | 'licenseNumber'
+  | 'specialty'
+  | 'subSpecialty'
+  | 'licensingBody'
+  | 'licenseExpiresAt'
+  | 'qualifications'
+  | 'yearsExperience'
+  | 'languages'
+  | 'consultationFee'
+  | 'telehealthEnabled'
+  | 'acceptsOnlineBookings'
+  | 'acceptsNewPatients'
+  | 'professionalBio'
+  | 'professionalLinks'
+>>;
+
 export interface AssignStaffDepartmentInput {
   departmentId: string;
   branchId?: string | undefined;
   role: string;
   accessLevel: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN';
   isPrimaryDepartment?: boolean;
+  canAccessDashboard?: boolean;
+  startsAt?: string | undefined;
+  endsAt?: string | undefined;
 }
 
 export interface CreateStaffShiftInput {
@@ -131,5 +274,7 @@ export interface CreateStaffShiftInput {
   shiftName: string;
   startTime: string;
   endTime: string;
+  breakStartTime?: string | undefined;
+  breakEndTime?: string | undefined;
   daysOfWeek: string[];
 }

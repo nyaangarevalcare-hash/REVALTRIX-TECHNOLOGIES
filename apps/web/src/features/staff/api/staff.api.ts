@@ -1,4 +1,5 @@
 import { authenticatedApiRequest } from '../../../lib/auth-api.js';
+import { getAuthSession } from '../../auth/api/auth-session.js';
 import type {
   CreateStaffInput,
   CreateStaffResponse,
@@ -7,7 +8,21 @@ import type {
   StaffAccessAttempt,
   StaffMeResponse,
   StaffMember,
+  StaffDocument,
+  StaffTimeOff,
+  UpdateStaffInput,
 } from '../types/staff.types.js';
+
+async function downloadPrivateStaffFile(path: string): Promise<Blob> {
+  const session = getAuthSession();
+  if (!session) throw new Error('Authentication required.');
+  const apiBase = import.meta.env.VITE_API_URL?.replace(/\/+$/, '') ?? '/api';
+  const response = await fetch(`${apiBase}${path}`, {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  });
+  if (!response.ok) throw new Error(`Private staff file request failed (${response.status})`);
+  return response.blob();
+}
 
 export function getStaff(): Promise<StaffMember[]> {
   return authenticatedApiRequest<StaffMember[]>('/v1/staff');
@@ -18,8 +33,15 @@ export function getMyStaffProfile(): Promise<StaffMeResponse> {
 }
 
 export function createStaff(input: CreateStaffInput): Promise<CreateStaffResponse> {
-  return authenticatedApiRequest<CreateStaffResponse>('/v1/staff', {
+  return authenticatedApiRequest<CreateStaffResponse>('/v1/staff/invite', {
     method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateStaffProfile(staffProfileId: string, input: UpdateStaffInput): Promise<{ id: string; updatedAt: string }> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}`, {
+    method: 'PATCH',
     body: JSON.stringify(input),
   });
 }
@@ -31,6 +53,12 @@ export function resendStaffInvitation(
     `/v1/staff/${staffProfileId}/resend-invitation`,
     { method: 'POST' },
   );
+}
+
+export function revokeStaffInvitation(staffProfileId: string): Promise<unknown> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/revoke-invitation`, {
+    method: 'POST',
+  });
 }
 
 export function approveStaffInvitation(
@@ -49,6 +77,16 @@ export function assignStaffDepartment(
   });
 }
 
+export function revokeStaffDepartment(
+  staffProfileId: string,
+  assignmentId: string,
+): Promise<unknown> {
+  return authenticatedApiRequest(
+    `/v1/staff/${staffProfileId}/assignments/${assignmentId}`,
+    { method: 'DELETE' },
+  );
+}
+
 export function createStaffShift(
   staffProfileId: string,
   input: CreateStaffShiftInput,
@@ -59,13 +97,97 @@ export function createStaffShift(
   });
 }
 
+export function listStaffDocuments(staffProfileId: string): Promise<StaffDocument[]> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/documents`);
+}
+
+export function removeStaffProfilePhoto(staffProfileId: string): Promise<{ profilePhotoRemoved: true }> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/photo`, { method: 'DELETE' });
+}
+
+export function uploadStaffDocument(
+  staffProfileId: string,
+  type: string,
+  file: File,
+  expiresAt?: string,
+): Promise<StaffDocument> {
+  const formData = new FormData();
+  formData.set('type', type);
+  if (expiresAt) formData.set('expiresAt', expiresAt);
+  formData.set('file', file);
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/documents`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export function reviewStaffDocument(
+  staffProfileId: string,
+  documentId: string,
+  status: 'VERIFIED' | 'REJECTED',
+  reviewNotes?: string,
+): Promise<unknown> {
+  return authenticatedApiRequest(
+    `/v1/staff/${staffProfileId}/documents/${documentId}/review`,
+    { method: 'PATCH', body: JSON.stringify({ status, reviewNotes }) },
+  );
+}
+
+export function removeStaffDocument(staffProfileId: string, documentId: string): Promise<unknown> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/documents/${documentId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function downloadStaffDocument(
+  staffProfileId: string,
+  documentId: string,
+): Promise<Blob> {
+  return downloadPrivateStaffFile(`/v1/staff/${staffProfileId}/documents/${documentId}/download`);
+}
+
+export function downloadStaffPhoto(staffProfileId: string): Promise<Blob> {
+  return downloadPrivateStaffFile(`/v1/staff/${staffProfileId}/photo`);
+}
+
+export function listStaffTimeOff(staffProfileId: string): Promise<StaffTimeOff[]> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/time-off`);
+}
+
+export function createStaffTimeOff(
+  staffProfileId: string,
+  input: { startsAt: string; endsAt: string; reason?: string },
+): Promise<StaffTimeOff> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/time-off`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function reviewStaffTimeOff(
+  staffProfileId: string,
+  timeOffId: string,
+  status: 'APPROVED' | 'REJECTED' | 'CANCELLED',
+): Promise<unknown> {
+  return authenticatedApiRequest(`/v1/staff/${staffProfileId}/time-off/${timeOffId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
 export function updateStaffStatus(
   staffProfileId: string,
   status: StaffMember['status'],
 ): Promise<StaffMember> {
-  return authenticatedApiRequest<StaffMember>(`/v1/staff/${staffProfileId}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status }),
+  const actions: Partial<Record<StaffMember['status'], string>> = {
+    ACTIVE: 'reactivate',
+    SUSPENDED: 'suspend',
+    OFFBOARDED: 'offboard',
+  };
+  const action = actions[status];
+  if (!action) throw new Error(`Unsupported staff status change: ${status}`);
+  return authenticatedApiRequest<StaffMember>(`/v1/staff/${staffProfileId}/${action}`, {
+    method: 'POST',
   });
 }
 
