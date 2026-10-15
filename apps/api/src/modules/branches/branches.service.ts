@@ -24,6 +24,15 @@ export class BranchesService {
         id: true,
         name: true,
         code: true,
+        address: true,
+        town: true,
+        county: true,
+        postalCode: true,
+        contactPhone: true,
+        contactEmail: true,
+        openingTime: true,
+        closingTime: true,
+        operatingDays: true,
         status: true,
         organizationId: true,
         organization: {
@@ -68,6 +77,15 @@ export class BranchesService {
         id: true,
         name: true,
         code: true,
+        address: true,
+        town: true,
+        county: true,
+        postalCode: true,
+        contactPhone: true,
+        contactEmail: true,
+        openingTime: true,
+        closingTime: true,
+        operatingDays: true,
         status: true,
         organizationId: true,
         organization: {
@@ -128,12 +146,30 @@ export class BranchesService {
         tenantId,
         name,
         code,
+        address: dto.address?.trim() || null,
+        town: dto.town?.trim() || null,
+        county: dto.county?.trim() || null,
+        postalCode: dto.postalCode?.trim() || null,
+        contactPhone: dto.contactPhone?.trim() || null,
+        contactEmail: dto.contactEmail?.trim().toLowerCase() || null,
+        openingTime: dto.openingTime ?? null,
+        closingTime: dto.closingTime ?? null,
+        operatingDays: dto.operatingDays ?? [],
         organizationId: dto.organizationId ?? null,
       },
       select: {
         id: true,
         name: true,
         code: true,
+        address: true,
+        town: true,
+        county: true,
+        postalCode: true,
+        contactPhone: true,
+        contactEmail: true,
+        openingTime: true,
+        closingTime: true,
+        operatingDays: true,
         status: true,
         organizationId: true,
         createdAt: true,
@@ -169,6 +205,15 @@ export class BranchesService {
     const data: {
       name?: string;
       code?: string;
+      address?: string | null;
+      town?: string | null;
+      county?: string | null;
+      postalCode?: string | null;
+      contactPhone?: string | null;
+      contactEmail?: string | null;
+      openingTime?: string | null;
+      closingTime?: string | null;
+      operatingDays?: string[];
       organizationId?: string | null;
     } = {};
 
@@ -184,6 +229,34 @@ export class BranchesService {
       }
 
       data.code = code;
+    }
+
+    if (dto.address !== undefined) {
+      data.address = dto.address?.trim() || null;
+    }
+    if (dto.town !== undefined) {
+      data.town = dto.town?.trim() || null;
+    }
+    if (dto.county !== undefined) {
+      data.county = dto.county?.trim() || null;
+    }
+    if (dto.postalCode !== undefined) {
+      data.postalCode = dto.postalCode?.trim() || null;
+    }
+    if (dto.contactPhone !== undefined) {
+      data.contactPhone = dto.contactPhone?.trim() || null;
+    }
+    if (dto.contactEmail !== undefined) {
+      data.contactEmail = dto.contactEmail?.trim().toLowerCase() || null;
+    }
+    if (dto.openingTime !== undefined) {
+      data.openingTime = dto.openingTime || null;
+    }
+    if (dto.closingTime !== undefined) {
+      data.closingTime = dto.closingTime || null;
+    }
+    if (dto.operatingDays !== undefined) {
+      data.operatingDays = dto.operatingDays;
     }
 
     if (dto.organizationId !== undefined) {
@@ -208,6 +281,15 @@ export class BranchesService {
         id: true,
         name: true,
         code: true,
+        address: true,
+        town: true,
+        county: true,
+        postalCode: true,
+        contactPhone: true,
+        contactEmail: true,
+        openingTime: true,
+        closingTime: true,
+        operatingDays: true,
         status: true,
         organizationId: true,
         organization: {

@@ -21,6 +21,15 @@ export interface Branch {
   id: string;
   name: string;
   code: string;
+  address: string | null;
+  town: string | null;
+  county: string | null;
+  postalCode: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  openingTime: string | null;
+  closingTime: string | null;
+  operatingDays: string[];
   status: string;
   organizationId: string | null;
   organization?: BranchOrganization | null;
@@ -33,11 +42,29 @@ export interface Branch {
 export interface CreateBranchInput {
   name: string;
   code: string;
+  address?: string;
+  town?: string;
+  county?: string;
+  postalCode?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  openingTime?: string;
+  closingTime?: string;
+  operatingDays?: string[];
   organizationId?: string;
 }
 
 export interface UpdateBranchInput {
   name?: string;
   code?: string;
+  address?: string | null;
+  town?: string | null;
+  county?: string | null;
+  postalCode?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  openingTime?: string | null;
+  closingTime?: string | null;
+  operatingDays?: string[];
   organizationId?: string | null;
 }

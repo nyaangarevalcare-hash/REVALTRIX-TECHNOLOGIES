@@ -1460,6 +1460,15 @@ model Branch {
   organizationId String?      @db.Uuid
   name           String       @db.VarChar(200)
   code           String       @db.VarChar(50)
+  address        String?      @db.VarChar(1000)
+  town           String?      @db.VarChar(150)
+  county         String?      @db.VarChar(150)
+  postalCode     String?      @db.VarChar(30)
+  contactPhone   String?      @db.VarChar(50)
+  contactEmail   String?      @db.VarChar(254)
+  openingTime    String?      @db.VarChar(5)
+  closingTime    String?      @db.VarChar(5)
+  operatingDays  String[]     @default([])
   status         RecordStatus @default(ACTIVE)
 
   createdAt DateTime  @default(now()) @db.Timestamptz(6)

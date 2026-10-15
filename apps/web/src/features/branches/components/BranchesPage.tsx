@@ -17,11 +17,29 @@ interface BranchesPageProps {
 interface BranchFormState {
   name: string;
   code: string;
+  address: string;
+  town: string;
+  county: string;
+  postalCode: string;
+  contactPhone: string;
+  contactEmail: string;
+  openingTime: string;
+  closingTime: string;
+  operatingDays: string[];
 }
 
 const emptyForm: BranchFormState = {
   name: '',
   code: '',
+  address: '',
+  town: '',
+  county: '',
+  postalCode: '',
+  contactPhone: '',
+  contactEmail: '',
+  openingTime: '',
+  closingTime: '',
+  operatingDays: [],
 };
 
 export function BranchesPage({
@@ -71,6 +89,15 @@ export function BranchesPage({
     setForm({
       name: branch.name,
       code: branch.code,
+      address: branch.address ?? '',
+      town: branch.town ?? '',
+      county: branch.county ?? '',
+      postalCode: branch.postalCode ?? '',
+      contactPhone: branch.contactPhone ?? '',
+      contactEmail: branch.contactEmail ?? '',
+      openingTime: branch.openingTime ?? '',
+      closingTime: branch.closingTime ?? '',
+      operatingDays: branch.operatingDays ?? [],
     });
     setError(null);
     setSuccess(null);
@@ -83,6 +110,17 @@ export function BranchesPage({
     setForm((current) => ({
       ...current,
       [field]: value,
+    }));
+    setError(null);
+    setSuccess(null);
+  }
+
+  function toggleOperatingDay(day: string): void {
+    setForm((current) => ({
+      ...current,
+      operatingDays: current.operatingDays.includes(day)
+        ? current.operatingDays.filter((item) => item !== day)
+        : [...current.operatingDays, day],
     }));
     setError(null);
     setSuccess(null);
@@ -112,6 +150,15 @@ export function BranchesPage({
         await updateBranch(editingBranch.id, {
           name,
           code,
+          address: form.address.trim() || null,
+          town: form.town.trim() || null,
+          county: form.county.trim() || null,
+          postalCode: form.postalCode.trim() || null,
+          contactPhone: form.contactPhone.trim() || null,
+          contactEmail: form.contactEmail.trim() || null,
+          openingTime: form.openingTime || null,
+          closingTime: form.closingTime || null,
+          operatingDays: form.operatingDays,
         });
 
         setSuccess(
@@ -121,6 +168,15 @@ export function BranchesPage({
         const input: CreateBranchInput = {
           name,
           code,
+          address: form.address.trim() || undefined,
+          town: form.town.trim() || undefined,
+          county: form.county.trim() || undefined,
+          postalCode: form.postalCode.trim() || undefined,
+          contactPhone: form.contactPhone.trim() || undefined,
+          contactEmail: form.contactEmail.trim() || undefined,
+          openingTime: form.openingTime || undefined,
+          closingTime: form.closingTime || undefined,
+          operatingDays: form.operatingDays,
         };
 
         await createBranch(input);
@@ -282,7 +338,56 @@ export function BranchesPage({
                   placeholder="MAIN"
                 />
               </label>
+
+              <label>
+                <span>Physical address</span>
+                <input value={form.address} onChange={(event) => updateField('address', event.target.value)} maxLength={1000} placeholder="Street, building or landmark" />
+              </label>
+              <label>
+                <span>Town / City</span>
+                <input value={form.town} onChange={(event) => updateField('town', event.target.value)} maxLength={150} placeholder="Nairobi" />
+              </label>
+              <label>
+                <span>County</span>
+                <input value={form.county} onChange={(event) => updateField('county', event.target.value)} maxLength={150} placeholder="Nairobi County" />
+              </label>
+              <label>
+                <span>Postal code</span>
+                <input value={form.postalCode} onChange={(event) => updateField('postalCode', event.target.value)} maxLength={30} placeholder="00100" />
+              </label>
+              <label>
+                <span>Contact phone</span>
+                <input type="tel" value={form.contactPhone} onChange={(event) => updateField('contactPhone', event.target.value)} maxLength={50} placeholder="+254 7..." />
+              </label>
+              <label>
+                <span>Contact email</span>
+                <input type="email" value={form.contactEmail} onChange={(event) => updateField('contactEmail', event.target.value)} maxLength={254} placeholder="branch@example.com" />
+              </label>
+              <label>
+                <span>Opening time</span>
+                <input type="time" value={form.openingTime} onChange={(event) => updateField('openingTime', event.target.value)} />
+              </label>
+              <label>
+                <span>Closing time</span>
+                <input type="time" value={form.closingTime} onChange={(event) => updateField('closingTime', event.target.value)} />
+              </label>
             </div>
+
+            <fieldset className="branches-operating-days">
+              <legend>Operating days</legend>
+              <div className="tenant-form-grid">
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
+                  <label key={day}>
+                    <input
+                      type="checkbox"
+                      checked={form.operatingDays.includes(day)}
+                      onChange={() => toggleOperatingDay(day)}
+                    />
+                    <span>{day}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             <div className="branches-form-actions">
               <button
@@ -364,6 +469,69 @@ export function BranchesPage({
                       {branch._count?.services ?? 0}
                     </span>
                   </div>
+
+                  {(branch.address ||
+                    branch.town ||
+                    branch.county ||
+                    branch.postalCode ||
+                    branch.contactPhone ||
+                    branch.contactEmail ||
+                    branch.openingTime ||
+                    branch.closingTime ||
+                    branch.operatingDays?.length) && (
+                    <div className="branch-details">
+                      {(branch.address ||
+                        branch.town ||
+                        branch.county ||
+                        branch.postalCode) && (
+                        <p>
+                          <strong>Location:</strong>{' '}
+                          {[
+                            branch.address,
+                            branch.town,
+                            branch.county,
+                            branch.postalCode,
+                          ]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </p>
+                      )}
+
+                      {branch.contactPhone && (
+                        <p>
+                          <strong>Phone:</strong>{' '}
+                          <a href={`tel:${branch.contactPhone}`}>
+                            {branch.contactPhone}
+                          </a>
+                        </p>
+                      )}
+
+                      {branch.contactEmail && (
+                        <p>
+                          <strong>Email:</strong>{' '}
+                          <a href={`mailto:${branch.contactEmail}`}>
+                            {branch.contactEmail}
+                          </a>
+                        </p>
+                      )}
+
+                      {(branch.openingTime || branch.closingTime) && (
+                        <p>
+                          <strong>Hours:</strong>{' '}
+                          {branch.openingTime || 'Not set'}
+                          {' – '}
+                          {branch.closingTime || 'Not set'}
+                        </p>
+                      )}
+
+                      {branch.operatingDays?.length > 0 && (
+                        <p>
+                          <strong>Operating days:</strong>{' '}
+                          {branch.operatingDays.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {branch.organization && (
                     <p className="branch-organization">
