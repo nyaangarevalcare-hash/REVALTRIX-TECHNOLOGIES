@@ -31,16 +31,33 @@ export class EmailService implements OnModuleDestroy {
   }
 
   async send(input: SendEmailInput): Promise<void> {
-    await this.transporter.sendMail({
-      from: {
-        name: this.config.fromName,
-        address: this.config.fromEmail,
-      },
-      to: input.to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-    });
+    try {
+      await this.transporter.sendMail({
+        from: {
+          name: this.config.fromName,
+          address: this.config.fromEmail,
+        },
+        to: input.to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      });
+    } catch (error) {
+      const details: Record<string, string | number> = {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      };
+      if (typeof error === 'object' && error !== null) {
+        if ('code' in error && typeof error.code === 'string') details.code = error.code;
+        if ('command' in error && typeof error.command === 'string') {
+          details.command = error.command;
+        }
+        if ('responseCode' in error && typeof error.responseCode === 'number') {
+          details.responseCode = error.responseCode;
+        }
+      }
+      this.logger.error(`Email delivery failed: ${JSON.stringify(details)}`);
+      throw error;
+    }
   }
 
   async verifyConnection(): Promise<void> {

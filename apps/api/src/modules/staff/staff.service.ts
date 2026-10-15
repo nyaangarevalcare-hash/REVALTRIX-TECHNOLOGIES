@@ -32,6 +32,19 @@ import type { CreateStaffTimeOffDto } from './dto/create-staff-time-off.dto.js';
 import type { ReviewStaffTimeOffDto } from './dto/review-staff-time-off.dto.js';
 import type { UpdateStaffDto } from './dto/update-staff.dto.js';
 
+function isMissingStoredObject(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if ('code' in error && error.code === 'ENOENT') return true;
+  if ('name' in error && (error.name === 'NoSuchKey' || error.name === 'NotFound')) return true;
+  if ('$metadata' in error && typeof error.$metadata === 'object' && error.$metadata !== null) {
+    return (
+      'httpStatusCode' in error.$metadata &&
+      error.$metadata.httpStatusCode === 404
+    );
+  }
+  return false;
+}
+
 @Injectable()
 export class StaffService {
   private readonly logger = new Logger(StaffService.name);
@@ -1081,7 +1094,19 @@ export class StaffService {
       select: { id: true, contentType: true },
     });
     if (!document) throw new NotFoundException('Staff profile photo not found');
-    const buffer = await this.storage.get(profile.profilePhotoKey);
+    let buffer: Buffer;
+    try {
+      buffer = await this.storage.get(profile.profilePhotoKey);
+    } catch (error) {
+      if (isMissingStoredObject(error)) {
+        throw new NotFoundException('Staff profile photo is no longer available');
+      }
+      this.logger.error(
+        `Unable to read stored profile photo for staff profile ${staffProfileId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new ServiceUnavailableException('Staff profile photo is temporarily unavailable');
+    }
     await this.database.client.auditEvent.create({
       data: {
         tenantId,
