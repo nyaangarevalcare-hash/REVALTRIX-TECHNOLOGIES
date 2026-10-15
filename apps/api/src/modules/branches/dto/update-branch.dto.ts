@@ -53,11 +53,11 @@ export class UpdateBranchDto {
   contactEmail?: string | null;
 
   @IsOptional()
-  @Matches(/^([01]\\d|2[0-3]):[0-5]\\d$/)
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
   openingTime?: string | null;
 
   @IsOptional()
-  @Matches(/^([01]\\d|2[0-3]):[0-5]\\d$/)
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
   closingTime?: string | null;
 
   @IsOptional()
