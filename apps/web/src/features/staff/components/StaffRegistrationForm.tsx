@@ -238,7 +238,7 @@ export function StaffRegistrationForm({ departments, branches, onCreated }: Staf
       }
       onCreated(
         created.id,
-        `${created.invitationStatus === 'VERIFICATION_EMAIL_SENT' ? 'Staff profile added; secure account setup email sent' : 'Staff profile added; account setup email could not be delivered'} for ${created.email}.${photoWarning}`,
+        `${created.invitationStatus === 'VERIFICATION_EMAIL_SENT' ? 'Staff profile added; email verification message sent' : 'Staff profile added; verification email could not be delivered'} for ${created.email}.${photoWarning}`,
       );
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Unable to add this staff member.');

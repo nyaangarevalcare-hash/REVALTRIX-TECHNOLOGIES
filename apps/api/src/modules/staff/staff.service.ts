@@ -108,6 +108,12 @@ export class StaffService {
                 credentialHash: true,
               },
             },
+            registrations: {
+              where: { tenantId, type: RegistrationType.TENANT },
+              select: { status: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
         },
         assignments: {
@@ -190,6 +196,7 @@ export class StaffService {
           : profile.invitationExpiresAt && profile.invitationExpiresAt < new Date()
             ? 'EXPIRED'
             : profile.invitationStatus,
+        registrationStatus: user.registrations[0]?.status ?? null,
       };
     });
   }

@@ -5,6 +5,7 @@ import { getDepartments } from '../../departments/api/departments.api.js';
 import type { Department } from '../../departments/types/department.types.js';
 import {
   assignStaffDepartment,
+  approveStaffInvitation,
   createStaffTimeOff,
   createStaffShift,
   downloadStaffDocument,
@@ -15,6 +16,7 @@ import {
   revokeStaffDepartment,
   removeStaffProfilePhoto,
   removeStaffDocument,
+  resendStaffInvitation,
   reviewStaffDocument,
   reviewStaffTimeOff,
   uploadStaffDocument,
@@ -259,6 +261,37 @@ export function StaffPage({ onNavigate }: StaffPageProps) {
         }
       },
     });
+  }
+
+  async function progressStaffInvitation(member: StaffMember): Promise<void> {
+    clearNotifications();
+    setActionFor(member.id);
+    try {
+      if (!member.emailVerified) {
+        const result = await resendStaffInvitation(member.id);
+        setMessage(
+          result.invitationStatus === 'VERIFICATION_EMAIL_SENT'
+            ? `Email verification was sent to ${member.email}.`
+            : `${member.firstName} ${member.lastName} has verified their email and is awaiting administrator approval.`,
+        );
+      } else {
+        const result = await approveStaffInvitation(member.id);
+        setMessage(
+          result.passwordSetupEmailStatus === 'SENT'
+            ? `Password setup email was sent to ${member.email}.`
+            : `Staff approval was updated for ${member.firstName} ${member.lastName}.`,
+        );
+      }
+      await loadData();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to progress this staff invitation.',
+      );
+    } finally {
+      setActionFor(null);
+    }
   }
 
   async function submitAssignment(
@@ -869,6 +902,16 @@ export function StaffPage({ onNavigate }: StaffPageProps) {
                       </span>
                       <span>Documents: {displayStatus(member.verificationStatus)}</span>
                       <span>
+                        Account setup:{' '}
+                        {member.passwordConfigured
+                          ? 'Password set'
+                          : member.emailVerified
+                            ? member.registrationStatus === 'ONBOARDING'
+                              ? 'Password setup email sent'
+                              : 'Administrator approval required'
+                            : 'Email verification required'}
+                      </span>
+                      <span>
                         {assignments
                           .map((item) => `${item.department.name} — ${item.role}`)
                           .join(', ') || 'No department assignment'}
@@ -890,6 +933,22 @@ export function StaffPage({ onNavigate }: StaffPageProps) {
                       {expanded ? 'Hide profile' : 'View profile'}
                     </button>
                     <button type="button" className="dashboard-secondary-button" onClick={() => setEditingStaffId(member.id)}>Edit profile</button>
+                    {member.status === 'INVITED' && !member.passwordConfigured && (
+                      <button
+                        type="button"
+                        className="dashboard-primary-button"
+                        disabled={actionFor === member.id}
+                        onClick={() => void progressStaffInvitation(member)}
+                      >
+                        {actionFor === member.id
+                          ? 'Sending...'
+                          : !member.emailVerified
+                            ? 'Resend verification email'
+                            : member.registrationStatus === 'ONBOARDING'
+                              ? 'Resend password setup email'
+                              : 'Approve & send setup email'}
+                      </button>
+                    )}
                     {member.status === 'ACTIVE' && <button type="button" className="dashboard-secondary-button" onClick={() => { setExpandedId(member.id); setShowShiftFor(member.id); setShift((current) => ({ ...current, departmentId: assignments.find((item) => item.status === 'ACTIVE')?.department.id ?? '' })); }}>Manage shifts</button>}
                     {member.status !== 'OFFBOARDED' && member.status !== 'INVITED' && (
                       <button

@@ -82,7 +82,7 @@ export class RegistrationDashboardService {
             where: {
               userId,
               tenantId: registration.tenant.id,
-              status: 'ACTIVE',
+              status: { in: ['ACTIVE', 'INVITED'] },
             },
             select: {
               firstName: true,

@@ -120,7 +120,7 @@ export class VerificationService {
       const staffProfile = await this.database.client.staffProfile.findFirst({
         where: {
           userId,
-          status: 'ACTIVE',
+          status: { in: ['ACTIVE', 'INVITED'] },
         },
         select: { id: true },
       });
@@ -593,7 +593,7 @@ export class VerificationService {
     const staffProfile = await this.database.client.staffProfile.findFirst({
       where: {
         userId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'INVITED'] },
         tenant: { status: 'ACTIVE', deletedAt: null },
       },
       select: { tenantId: true },

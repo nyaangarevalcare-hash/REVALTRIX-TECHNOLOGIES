@@ -38,6 +38,7 @@ export interface StaffMember {
   verificationStatus: string;
   invitationStatus: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
   invitationExpiresAt: string | null;
+  registrationStatus: string | null;
   status: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'ON_LEAVE' | 'OFFBOARDED';
   joinedAt: string | null;
   createdAt: string;
