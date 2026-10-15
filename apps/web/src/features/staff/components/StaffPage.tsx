@@ -625,7 +625,7 @@ export function StaffPage({ onNavigate }: StaffPageProps) {
 
   return (
     <main className="branches-layout">
-      <section className="dashboard-page-header">
+      <section className="dashboard-page-header staff-management-header">
         <div>
           <p className="dashboard-eyebrow">PEOPLE</p>
           <h1>Staff Management</h1>
