@@ -1,5 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import nodemailer, { type Transporter } from 'nodemailer';
+import { Injectable, Logger } from '@nestjs/common';
+import { Resend } from 'resend';
 import { EmailConfig } from './email.config.js';
 
 export interface SendEmailInput {
@@ -10,61 +10,51 @@ export interface SendEmailInput {
 }
 
 @Injectable()
-export class EmailService implements OnModuleDestroy {
+export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly transporter: Transporter;
+  private readonly resend: Resend;
 
   constructor(private readonly config: EmailConfig) {
-    this.transporter = nodemailer.createTransport({
-      host: this.config.host,
-      port: this.config.port,
-      secure: this.config.secure,
-      requireTLS: !this.config.secure,
-      auth: {
-        user: this.config.username,
-        pass: this.config.password,
-      },
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 15_000,
-    });
+    this.resend = new Resend(this.config.apiKey);
   }
 
   async send(input: SendEmailInput): Promise<void> {
     try {
-      await this.transporter.sendMail({
-        from: {
-          name: this.config.fromName,
-          address: this.config.fromEmail,
-        },
+      const { error } = await this.resend.emails.send({
+        from: `${this.config.fromName} <${this.config.fromEmail}>`,
         to: input.to,
         subject: input.subject,
         text: input.text,
         html: input.html,
       });
-    } catch (error) {
-      const details: Record<string, string | number> = {
-        errorName: error instanceof Error ? error.name : 'UnknownError',
-      };
-      if (typeof error === 'object' && error !== null) {
-        if ('code' in error && typeof error.code === 'string') details.code = error.code;
-        if ('command' in error && typeof error.command === 'string') {
-          details.command = error.command;
-        }
-        if ('responseCode' in error && typeof error.responseCode === 'number') {
-          details.responseCode = error.responseCode;
-        }
+
+      if (error) {
+        this.logger.error(
+          `Email delivery failed: ${JSON.stringify({
+            name: error.name,
+            message: error.message,
+            statusCode: error.statusCode,
+          })}`,
+        );
+        throw new Error(`Resend email delivery failed: ${error.message}`);
       }
-      this.logger.error(`Email delivery failed: ${JSON.stringify(details)}`);
+    } catch (error) {
+      if (!(error instanceof Error && error.message.startsWith('Resend email delivery failed:'))) {
+        this.logger.error(
+          `Email delivery failed: ${JSON.stringify({
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          })}`,
+        );
+      }
       throw error;
     }
   }
 
   async verifyConnection(): Promise<void> {
-    await this.transporter.verify();
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    this.transporter.close();
+    // Resend uses HTTPS; there is no persistent SMTP connection to verify.
+    // Validate the configured API key and sender by checking configuration.
+    void this.config.apiKey;
+    void this.config.fromEmail;
   }
 }
