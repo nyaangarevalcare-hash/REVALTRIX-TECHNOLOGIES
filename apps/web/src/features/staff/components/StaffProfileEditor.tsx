@@ -15,6 +15,9 @@ interface StaffProfileEditorProps {
 }
 
 export function StaffProfileEditor({ member, onCancel, onSaved }: StaffProfileEditorProps) {
+  if (!member) {
+    return <div className="registration-loading">Loading profile details...</div>;
+  }
   const [draft, setDraft] = useState({
     firstName: member.firstName,
     middleName: member.middleName ?? '',

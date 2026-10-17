@@ -237,6 +237,24 @@ enum ProductVisibility {
   DISCONTINUED
 }
 
+enum ProductPrescriptionClass {
+  OTC
+  PRESCRIPTION_ONLY
+  CONTROLLED
+}
+
+enum ProductVatStatus {
+  VATABLE
+  ZERO_RATED
+  EXEMPT
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
 enum ShopOrderStatus {
   PENDING
   CONFIRMED
@@ -254,6 +272,52 @@ enum ShopPaymentStatus {
   PAID
   FAILED
   REFUNDED
+}
+
+enum SaleStatus {
+  COMPLETED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum SalePaymentMethod {
+  CASH
+  MPESA_STK_PUSH
+  CARD
+  BANK_TRANSFER
+  CREDIT_ACCOUNT
+}
+
+enum SalePaymentStatus {
+  PAID
+  PENDING
+  REFUNDED
+}
+
+enum StockMovementType {
+  SALE
+  REFUND
+  RECEIVE
+  PURCHASE_RETURN
+}
+
+enum PurchaseStatus {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  PARTIALLY_RETURNED
+  RETURNED
+  CANCELLED
+}
+
+enum PurchasePaymentMethod {
+  CASH
+  BANK_TRANSFER
+  MPESA
+  CARD
+  CHEQUE
+  OTHER
 }
 
 enum ProviderType {
@@ -600,6 +664,17 @@ model User {
   registrationSessions               RegistrationSession[]
   verificationChallenges             VerificationChallenge[]
   auditEvents                        AuditEvent[]                       @relation("AuditActor")
+  cashierSales                       Sale[]                             @relation("SaleCashier")
+  cashierRefunds                     SaleRefund[]                       @relation("SaleRefundCashier")
+  purchasesCreated                   Purchase[]                         @relation("PurchaseCreator")
+  purchasesApproved                  Purchase[]                         @relation("PurchaseApprover")
+  purchaseReceipts                   PurchaseReceipt[]                  @relation("PurchaseReceiver")
+  purchasePayments                   PurchasePayment[]                  @relation("PurchasePaymentRecorder")
+  purchaseReturns                    PurchaseReturn[]                   @relation("PurchaseReturnRecorder")
+  supplierReturns                     SupplierReturn[]                   @relation("SupplierReturnRecorder")
+  supplierPayments                   SupplierPayment[]                  @relation("SupplierPaymentRecorder")
+  heldShopSales                      HeldShopSale[]
+  stockMovements                     StockMovement[]
   securityEvents                     SecurityEvent[]                    @relation("SecurityActor")
   createdPatientRecords              PatientTenantRecord[]              @relation("PatientRecordCreator")
   patientDataSubmissions             PatientDataSubmission[]            @relation("PatientDataSubmitter")
@@ -663,9 +738,9 @@ model User {
   availabilityRulesCreated  ProviderAvailability[]      @relation("ProviderAvailabilityCreator")
   availabilityBlocksCreated AvailabilityBlock[]         @relation("AvailabilityBlockCreator")
   staffProfiles             StaffProfile[]
-  staffServicesAssigned     StaffServiceAssignment[]       @relation("StaffServiceAssigner")
-  staffDocumentsUploaded   StaffDocument[]             @relation("StaffDocumentUploader")
-  staffDocumentsReviewed   StaffDocument[]             @relation("StaffDocumentReviewer")
+  staffServicesAssigned     StaffServiceAssignment[]    @relation("StaffServiceAssigner")
+  staffDocumentsUploaded    StaffDocument[]             @relation("StaffDocumentUploader")
+  staffDocumentsReviewed    StaffDocument[]             @relation("StaffDocumentReviewer")
   departmentAccessAttempts  DepartmentAccessAttempt[]
   staffAssignmentsAssigned  StaffDepartmentAssignment[] @relation("StaffAssignmentAssigner")
 
@@ -1114,12 +1189,13 @@ model EncounterStatusHistory {
 }
 
 model Tenant {
-  id        String       @id @default(uuid()) @db.Uuid
-  type      TenantType
-  name      String       @db.VarChar(200)
-  legalName String?      @db.VarChar(300)
-  code      String       @unique @db.VarChar(50)
-  status    RecordStatus @default(ACTIVE)
+  productBatches ProductBatch[]
+  id             String         @id @default(uuid()) @db.Uuid
+  type           TenantType
+  name           String         @db.VarChar(200)
+  legalName      String?        @db.VarChar(300)
+  code           String         @unique @db.VarChar(50)
+  status         RecordStatus   @default(ACTIVE)
 
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
@@ -1169,7 +1245,20 @@ model Tenant {
   shopSettings              ShopSettings?
   productCategories         ProductCategory[]
   products                  Product[]
+  suppliers                 Supplier[]
+  supplierContacts          SupplierContact[]
+  supplierPayments          SupplierPayment[]
+  supplierProductPrices     SupplierProductPrice[]
+  supplierReturns           SupplierReturn[]
+  purchases                 Purchase[]
+  purchaseReceipts          PurchaseReceipt[]
+  purchasePayments          PurchasePayment[]
+  purchaseReturns           PurchaseReturn[]
   shopOrders                ShopOrder[]
+  sales                     Sale[]
+  saleRefunds               SaleRefund[]
+  heldShopSales             HeldShopSale[]
+  stockMovements            StockMovement[]
   staffProfiles             StaffProfile[]
 
   @@index([type])
@@ -1260,37 +1349,203 @@ model ProductCategory {
   @@map("product_categories")
 }
 
-model Product {
-  id                   String            @id @default(uuid()) @db.Uuid
-  tenantId             String            @db.Uuid
-  categoryId           String?           @db.Uuid
-  name                 String            @db.VarChar(200)
-  sku                  String            @db.VarChar(100)
-  description          String?           @db.VarChar(2000)
-  images               String[]          @default([])
-  brand                String?           @db.VarChar(120)
-  price                Decimal           @db.Decimal(12, 2)
-  compareAtPrice       Decimal?          @db.Decimal(12, 2)
-  taxRate              Decimal           @default(0) @db.Decimal(6, 3)
-  stockQuantity        Int               @default(0)
-  reservedStock        Int               @default(0)
-  reorderLevel         Int               @default(0)
-  unit                 String            @default("unit") @db.VarChar(40)
-  barcode              String?           @db.VarChar(100)
-  expiryDate           DateTime?         @db.Date
-  batchNumber          String?           @db.VarChar(100)
-  visibility           ProductVisibility @default(HIDDEN)
-  prescriptionRequired Boolean           @default(false)
-  tags                 String[]          @default([])
-  createdAt            DateTime          @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime          @updatedAt @db.Timestamptz(6)
+model Supplier {
+  id                 String       @id @default(uuid()) @db.Uuid
+  tenantId           String       @db.Uuid
+  name               String       @db.VarChar(200)
+  contactName        String?      @db.VarChar(200)
+  phone              String?      @db.VarChar(50)
+  email              String?      @db.VarChar(320)
+  legalName          String?      @db.VarChar(300)
+  registrationNumber String?      @db.VarChar(150)
+  taxId              String?      @db.VarChar(100)
+  address            String?      @db.VarChar(500)
+  city               String?      @db.VarChar(100)
+  county             String?      @db.VarChar(100)
+  country            String?      @db.VarChar(100)
+  postalCode         String?      @db.VarChar(30)
+  website            String?      @db.VarChar(500)
+  notes              String?      @db.VarChar(2000)
+  paymentTermsDays   Int          @default(0)
+  creditLimit        Decimal      @default(0) @db.Decimal(12, 2)
+  defaultCurrency    String       @default("KES") @db.VarChar(3)
+  status             RecordStatus @default(ACTIVE)
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz(6)
 
-  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  category   ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  orderItems ShopOrderItem[]
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products      Product[]
+  purchases     Purchase[]
+  contacts      SupplierContact[]
+  payments      SupplierPayment[]
+  productPrices SupplierProductPrice[]
+  returns       SupplierReturn[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status, name])
+  @@map("suppliers")
+}
+
+model SupplierContact {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  supplierId String   @db.Uuid
+  name       String   @db.VarChar(200)
+  role       String?  @db.VarChar(100)
+  phone      String?  @db.VarChar(50)
+  email      String?  @db.VarChar(320)
+  isPrimary  Boolean  @default(false)
+  notes      String?  @db.VarChar(1000)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, supplierId, isPrimary])
+  @@map("supplier_contacts")
+}
+
+model SupplierPayment {
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  supplierId       String                @db.Uuid
+  recordedByUserId String                @db.Uuid
+  method           PurchasePaymentMethod
+  amount           Decimal               @db.Decimal(12, 2)
+  currency         String                @db.VarChar(3)
+  reference        String?               @db.VarChar(200)
+  notes            String?               @db.VarChar(1000)
+  paidAt           DateTime              @default(now()) @db.Timestamptz(6)
+  createdAt        DateTime              @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  recordedBy User     @relation("SupplierPaymentRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, supplierId, currency, paidAt])
+  @@map("supplier_payments")
+}
+
+model SupplierProductPrice {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid
+  supplierId      String   @db.Uuid
+  productId       String   @db.Uuid
+  currency        String   @db.VarChar(3)
+  unitCost        Decimal  @db.Decimal(12, 2)
+  minimumOrderQty Int      @default(1)
+  leadTimeDays    Int?
+  effectiveAt     DateTime @default(now()) @db.Timestamptz(6)
+  notes           String?  @db.VarChar(1000)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, supplierId, productId, currency, effectiveAt], map: "supplier_product_prices_lookup_idx")
+  @@map("supplier_product_prices")
+}
+
+model SupplierReturn {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  supplierId       String   @db.Uuid
+  purchaseReturnId String   @unique @db.Uuid
+  recordedByUserId String   @db.Uuid
+  returnNumber     String   @db.VarChar(100)
+  currency         String   @db.VarChar(3)
+  creditAmount     Decimal  @db.Decimal(12, 2)
+  reason           String   @db.VarChar(500)
+  returnedAt       DateTime @default(now()) @db.Timestamptz(6)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  supplier      Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseReturn PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Restrict)
+  recordedBy    User          @relation("SupplierReturnRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, returnNumber])
+  @@index([tenantId, supplierId, returnedAt])
+  @@map("supplier_returns")
+}
+
+model Product {
+  genericName       String? @db.VarChar(200)
+  strength          String? @db.VarChar(50)
+  dosageForm        String? @db.VarChar(100)
+  packSize          String? @db.VarChar(100)
+  manufacturer      String? @db.VarChar(150)
+  ppbRegistrationNo String? @db.VarChar(100)
+  storageCondition  String? @default("ROOM_TEMP") @db.VarChar(50)
+
+  id                    String                   @id @default(uuid()) @db.Uuid
+  tenantId              String                   @db.Uuid
+  branchId              String?                  @db.Uuid
+  categoryId            String?                  @db.Uuid
+  supplierId            String?                  @db.Uuid
+  name                  String                   @db.VarChar(200)
+  sku                   String                   @db.VarChar(100)
+  description           String?                  @db.VarChar(2000)
+  images                String[]                 @default([])
+  brand                 String?                  @db.VarChar(120)
+  brandName             String?                  @db.VarChar(120)
+  ppbRegistrationNumber String?                  @db.VarChar(100)
+  price                 Decimal                  @db.Decimal(12, 2)
+  sellingPrice          Decimal                  @default(0) @db.Decimal(12, 2)
+  costPrice             Decimal                  @default(0) @db.Decimal(12, 2)
+  wholesalePrice        Decimal?                 @db.Decimal(12, 2)
+  vatStatus             ProductVatStatus         @default(VATABLE)
+  compareAtPrice        Decimal?                 @db.Decimal(12, 2)
+  taxRate               Decimal                  @default(0) @db.Decimal(6, 3)
+  stockQuantity         Int                      @default(0)
+  reservedStock         Int                      @default(0)
+  reorderLevel          Int                      @default(0)
+  minimumStockLevel     Int                      @default(0)
+  reorderQuantity       Int                      @default(0)
+  storageInstructions   String?                  @db.VarChar(1000)
+  requiresColdChain     Boolean                  @default(false)
+  imageUrl              String?                  @db.VarChar(1000)
+  imageStorageKey       String?                  @db.VarChar(1000)
+  imageMimeType         String?                  @db.VarChar(100)
+  notes                 String?                  @db.VarChar(2000)
+  prescriptionClass     ProductPrescriptionClass @default(OTC)
+  status                ProductStatus            @default(ACTIVE)
+  unit                  String                   @default("unit") @db.VarChar(40)
+  barcode               String?                  @db.VarChar(100)
+  expiryDate            DateTime?                @db.Date
+  batchNumber           String?                  @db.VarChar(100)
+  visibility            ProductVisibility        @default(HIDDEN)
+  prescriptionRequired  Boolean                  @default(false)
+  tags                  String[]                 @default([])
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(6)
+
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch         Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  category       ProductCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplier       Supplier?              @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  supplierPrices SupplierProductPrice[]
+  orderItems     ShopOrderItem[]
+  batches        ProductBatch[]
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+  purchaseItems  PurchaseItem[]
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([name])
+  @@index([genericName])
+  @@index([brandName])
+  @@index([barcode])
+  @@index([sku])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([status])
   @@index([tenantId, visibility])
   @@index([tenantId, categoryId])
   @@map("products")
@@ -1341,6 +1596,177 @@ model ShopOrderItem {
   @@index([orderId])
   @@index([productId])
   @@map("shop_order_items")
+}
+
+model Purchase {
+  id                 String         @id @default(uuid()) @db.Uuid
+  tenantId           String         @db.Uuid
+  branchId           String?        @db.Uuid
+  supplierId         String         @db.Uuid
+  createdByUserId    String         @db.Uuid
+  purchaseNumber     String         @db.VarChar(100)
+  approvedByUserId   String?        @db.Uuid
+  approvedAt         DateTime?      @db.Timestamptz(6)
+  status             PurchaseStatus @default(DRAFT)
+  currency           String         @default("KES") @db.VarChar(3)
+  subtotal           Decimal        @db.Decimal(12, 2)
+  taxTotal           Decimal        @default(0) @db.Decimal(12, 2)
+  total              Decimal        @db.Decimal(12, 2)
+  transportCost      Decimal        @default(0) @db.Decimal(12, 2)
+  amountPaid         Decimal        @default(0) @db.Decimal(12, 2)
+  notes              String?        @db.VarChar(2000)
+  expectedAt         DateTime?      @db.Timestamptz(6)
+  sentAt             DateTime?      @db.Timestamptz(6)
+  receivedAt         DateTime?      @db.Timestamptz(6)
+  cancelledAt        DateTime?      @db.Timestamptz(6)
+  cancellationReason String?        @db.VarChar(500)
+  invoiceStorageKey  String?        @db.VarChar(1000)
+  invoiceFileName    String?        @db.VarChar(255)
+  invoiceMimeType    String?        @db.VarChar(100)
+  createdAt          DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime       @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch?           @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  supplier   Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  createdBy  User              @relation("PurchaseCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedBy User?             @relation("PurchaseApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  items      PurchaseItem[]
+  receipts   PurchaseReceipt[]
+  payments   PurchasePayment[]
+  returns    PurchaseReturn[]
+
+  @@unique([tenantId, purchaseNumber])
+  @@index([tenantId, branchId, status, createdAt])
+  @@index([tenantId, supplierId, createdAt])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id               String  @id @default(uuid()) @db.Uuid
+  purchaseId       String  @db.Uuid
+  productId        String  @db.Uuid
+  productName      String  @db.VarChar(200)
+  sku              String  @db.VarChar(100)
+  quantity         Int
+  receivedQuantity Int     @default(0)
+  rejectedQuantity Int     @default(0)
+  returnedQuantity Int     @default(0)
+  unitCost         Decimal @db.Decimal(12, 2)
+  taxRate          Decimal @default(0) @db.Decimal(6, 3)
+  lineTotal        Decimal @db.Decimal(12, 2)
+
+  purchase Purchase              @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  receipts PurchaseReceiptItem[]
+  returns  PurchaseReturnItem[]
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@map("purchase_items")
+}
+
+model PurchaseReceipt {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  purchaseId       String   @db.Uuid
+  receivedByUserId String   @db.Uuid
+  receiptNumber    String   @db.VarChar(100)
+  invoiceReference String?  @db.VarChar(200)
+  notes            String?  @db.VarChar(1000)
+  receivedAt       DateTime @default(now()) @db.Timestamptz(6)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  purchase   Purchase              @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  receivedBy User                  @relation("PurchaseReceiver", fields: [receivedByUserId], references: [id], onDelete: Restrict)
+  items      PurchaseReceiptItem[]
+
+  @@unique([tenantId, receiptNumber])
+  @@index([tenantId, purchaseId, receivedAt])
+  @@map("purchase_receipts")
+}
+
+model PurchaseReceiptItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  receiptId        String   @db.Uuid
+  purchaseItemId   String   @db.Uuid
+  batchId          String?  @db.Uuid
+  quantity         Int      @default(0)
+  quantityRejected Int      @default(0)
+  unitCost         Decimal  @db.Decimal(12, 2)
+  sellingPrice     Decimal? @db.Decimal(12, 2)
+  shelfLocation    String?  @db.VarChar(100)
+
+  receipt      PurchaseReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  purchaseItem PurchaseItem         @relation(fields: [purchaseItemId], references: [id], onDelete: Restrict)
+  batch        ProductBatch?        @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  movements    StockMovement[]
+  returns      PurchaseReturnItem[]
+
+  @@index([purchaseItemId])
+  @@index([batchId])
+  @@map("purchase_receipt_items")
+}
+
+model PurchasePayment {
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @db.Uuid
+  purchaseId       String                @db.Uuid
+  recordedByUserId String                @db.Uuid
+  method           PurchasePaymentMethod
+  amount           Decimal               @db.Decimal(12, 2)
+  reference        String?               @db.VarChar(200)
+  paidAt           DateTime              @default(now()) @db.Timestamptz(6)
+  createdAt        DateTime              @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  recordedBy User     @relation("PurchasePaymentRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, purchaseId, paidAt])
+  @@map("purchase_payments")
+}
+
+model PurchaseReturn {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  purchaseId       String   @db.Uuid
+  recordedByUserId String   @db.Uuid
+  returnNumber     String   @db.VarChar(100)
+  reason           String   @db.VarChar(500)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  purchase   Purchase             @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  recordedBy User                 @relation("PurchaseReturnRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  items      PurchaseReturnItem[]
+  supplierReturn SupplierReturn?
+
+  @@unique([tenantId, returnNumber])
+  @@index([tenantId, purchaseId, createdAt])
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  returnId       String  @db.Uuid
+  purchaseItemId String  @db.Uuid
+  receiptItemId  String? @db.Uuid
+  batchId        String  @db.Uuid
+  quantity       Int
+  unitCost       Decimal @db.Decimal(12, 2)
+
+  purchaseReturn PurchaseReturn       @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  purchaseItem   PurchaseItem         @relation(fields: [purchaseItemId], references: [id], onDelete: Restrict)
+  batch          ProductBatch         @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  receiptItem    PurchaseReceiptItem? @relation(fields: [receiptItemId], references: [id], onDelete: Restrict)
+  movements      StockMovement[]
+
+  @@index([purchaseItemId])
+  @@index([receiptItemId])
+  @@index([batchId])
+  @@map("purchase_return_items")
 }
 
 model TenantSetup {
@@ -1411,11 +1837,11 @@ model Service {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  department         Department?            @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  branch             Branch?                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  department         Department?              @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  branch             Branch?                  @relation(fields: [branchId], references: [id], onDelete: Restrict)
   appointments       Appointment[]
-  staffAssignments  StaffServiceAssignment[]
+  staffAssignments   StaffServiceAssignment[]
   availabilityRules  ProviderAvailability[]
   availabilityBlocks AvailabilityBlock[]
 
@@ -1493,6 +1919,8 @@ model Branch {
   staffProfiles       StaffProfile[]
   staffAssignments    StaffDepartmentAssignment[]
   staffShifts         StaffShift[]
+  products            Product[]
+  purchases           Purchase[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1562,51 +1990,51 @@ model Department {
 }
 
 model StaffProfile {
-  id              String              @id @default(uuid()) @db.Uuid
-  tenantId        String              @db.Uuid
-  userId          String              @db.Uuid
-  hospitalId      String?             @db.Uuid
-  departmentId    String?             @db.Uuid
-  branchId        String?             @db.Uuid
-  reportsToId     String?             @db.Uuid
-  staffNumber     String?             @db.VarChar(100)
-  firstName       String              @db.VarChar(100)
-  middleName      String?             @db.VarChar(100)
-  lastName        String              @db.VarChar(100)
-  email           String              @db.VarChar(320)
-  phone           String?             @db.VarChar(50)
-  whatsappNumber  String?             @db.VarChar(50)
-  gender          String?             @db.VarChar(40)
-  dateOfBirth     DateTime?           @db.Date
-  nationalIdEncrypted String?          @db.VarChar(300)
-  nationality     String?             @db.VarChar(100)
-  physicalAddress String?             @db.VarChar(1000)
-  profilePhotoUrl String?             @db.VarChar(1000)
-  profilePhotoKey String?             @db.VarChar(1000)
-  jobTitle        String?             @db.VarChar(150)
-  employmentType  StaffEmploymentType @default(FULL_TIME)
-  professionalCategory StaffProfessionalCategory?
-  licenseNumber   String?             @db.VarChar(150)
-  specialty       String?             @db.VarChar(200)
-  subSpecialty    String?             @db.VarChar(200)
-  licensingBody   String?             @db.VarChar(200)
-  licenseExpiresAt DateTime?          @db.Date
-  qualifications  String?             @db.VarChar(1000)
-  yearsExperience Int?
-  languages       String[]            @default([])
-  consultationFee Decimal?            @db.Decimal(10, 2)
-  telehealthEnabled Boolean           @default(false)
-  acceptsOnlineBookings Boolean       @default(false)
-  acceptsNewPatients Boolean          @default(false)
-  professionalBio String?             @db.VarChar(4000)
-  professionalLinks String[]           @default([])
-  verificationStatus StaffVerificationStatus @default(EMAIL_PENDING)
-  invitationStatus StaffInvitationStatus @default(PENDING)
-  invitationExpiresAt DateTime?       @db.Timestamptz(6)
-  status          StaffStatus         @default(ACTIVE)
-  joinedAt        DateTime?           @db.Timestamptz(6)
-  createdAt       DateTime            @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime            @updatedAt @db.Timestamptz(6)
+  id                    String                     @id @default(uuid()) @db.Uuid
+  tenantId              String                     @db.Uuid
+  userId                String                     @db.Uuid
+  hospitalId            String?                    @db.Uuid
+  departmentId          String?                    @db.Uuid
+  branchId              String?                    @db.Uuid
+  reportsToId           String?                    @db.Uuid
+  staffNumber           String?                    @db.VarChar(100)
+  firstName             String                     @db.VarChar(100)
+  middleName            String?                    @db.VarChar(100)
+  lastName              String                     @db.VarChar(100)
+  email                 String                     @db.VarChar(320)
+  phone                 String?                    @db.VarChar(50)
+  whatsappNumber        String?                    @db.VarChar(50)
+  gender                String?                    @db.VarChar(40)
+  dateOfBirth           DateTime?                  @db.Date
+  nationalIdEncrypted   String?                    @db.VarChar(300)
+  nationality           String?                    @db.VarChar(100)
+  physicalAddress       String?                    @db.VarChar(1000)
+  profilePhotoUrl       String?                    @db.VarChar(1000)
+  profilePhotoKey       String?                    @db.VarChar(1000)
+  jobTitle              String?                    @db.VarChar(150)
+  employmentType        StaffEmploymentType        @default(FULL_TIME)
+  professionalCategory  StaffProfessionalCategory?
+  licenseNumber         String?                    @db.VarChar(150)
+  specialty             String?                    @db.VarChar(200)
+  subSpecialty          String?                    @db.VarChar(200)
+  licensingBody         String?                    @db.VarChar(200)
+  licenseExpiresAt      DateTime?                  @db.Date
+  qualifications        String?                    @db.VarChar(1000)
+  yearsExperience       Int?
+  languages             String[]                   @default([])
+  consultationFee       Decimal?                   @db.Decimal(10, 2)
+  telehealthEnabled     Boolean                    @default(false)
+  acceptsOnlineBookings Boolean                    @default(false)
+  acceptsNewPatients    Boolean                    @default(false)
+  professionalBio       String?                    @db.VarChar(4000)
+  professionalLinks     String[]                   @default([])
+  verificationStatus    StaffVerificationStatus    @default(EMAIL_PENDING)
+  invitationStatus      StaffInvitationStatus      @default(PENDING)
+  invitationExpiresAt   DateTime?                  @db.Timestamptz(6)
+  status                StaffStatus                @default(ACTIVE)
+  joinedAt              DateTime?                  @db.Timestamptz(6)
+  createdAt             DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                   @updatedAt @db.Timestamptz(6)
 
   tenant         Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   user           User                        @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -2856,14 +3284,14 @@ model Registration {
 }
 
 model RegistrationSession {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  tokenHash  String    @unique @db.VarChar(128)
+  id         String              @id @default(uuid()) @db.Uuid
+  userId     String              @db.Uuid
+  tokenHash  String              @unique @db.VarChar(128)
   purpose    VerificationPurpose @default(REGISTRATION)
-  expiresAt  DateTime  @db.Timestamptz(6)
-  consumedAt DateTime? @db.Timestamptz(6)
-  lastUsedAt DateTime? @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt  DateTime            @db.Timestamptz(6)
+  consumedAt DateTime?           @db.Timestamptz(6)
+  lastUsedAt DateTime?           @db.Timestamptz(6)
+  createdAt  DateTime            @default(now()) @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
@@ -3115,4 +3543,165 @@ model AvailabilityBlock {
   @@index([tenantId, branchId, startAt, endAt])
   @@index([tenantId, departmentId, startAt, endAt])
   @@map("availability_blocks")
+}
+
+model ProductBatch {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  productId    String   @db.Uuid
+  batchNumber  String   @db.VarChar(100)
+  expiryDate   DateTime @db.Date
+  quantity     Int      @default(0)
+  costPrice    Decimal  @db.Decimal(12, 2)
+  supplierName String?  @db.VarChar(200)
+  receivedAt   DateTime @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product              Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+  purchaseReceiptItems PurchaseReceiptItem[]
+  purchaseReturnItems  PurchaseReturnItem[]
+
+  @@unique([tenantId, productId, batchNumber])
+  @@index([tenantId, expiryDate])
+  @@map("product_batches")
+}
+
+model Sale {
+  id            String            @id @default(uuid()) @db.Uuid
+  tenantId      String            @db.Uuid
+  cashierUserId String            @db.Uuid
+  saleNumber    String            @db.VarChar(100)
+  status        SaleStatus        @default(COMPLETED)
+  paymentStatus SalePaymentStatus @default(PAID)
+  currency      String            @db.VarChar(3)
+  subtotal      Decimal           @db.Decimal(12, 2)
+  discountTotal Decimal           @default(0) @db.Decimal(12, 2)
+  taxTotal      Decimal           @default(0) @db.Decimal(12, 2)
+  total         Decimal           @db.Decimal(12, 2)
+  amountPaid    Decimal           @default(0) @db.Decimal(12, 2)
+  changeDue     Decimal           @default(0) @db.Decimal(12, 2)
+  customerName  String?           @db.VarChar(200)
+  customerPhone String?           @db.VarChar(50)
+  createdAt     DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @db.Timestamptz(6)
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  cashier        User            @relation("SaleCashier", fields: [cashierUserId], references: [id], onDelete: Restrict)
+  items          SaleItem[]
+  payments       SalePayment[]
+  refunds        SaleRefund[]
+  stockMovements StockMovement[]
+
+  @@unique([tenantId, saleNumber])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  saleId         String   @db.Uuid
+  productId      String   @db.Uuid
+  batchId        String   @db.Uuid
+  productName    String   @db.VarChar(200)
+  sku            String   @db.VarChar(100)
+  batchNumber    String   @db.VarChar(100)
+  expiryDate     DateTime @db.Date
+  unit           String   @db.VarChar(40)
+  quantity       Int
+  unitPrice      Decimal  @db.Decimal(12, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(12, 2)
+  taxRate        Decimal  @db.Decimal(6, 3)
+  lineTotal      Decimal  @db.Decimal(12, 2)
+
+  sale    Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch   ProductBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId, batchId])
+  @@map("sale_items")
+}
+
+model SalePayment {
+  id        String            @id @default(uuid()) @db.Uuid
+  saleId    String            @db.Uuid
+  method    SalePaymentMethod
+  status    SalePaymentStatus @default(PAID)
+  amount    Decimal           @db.Decimal(12, 2)
+  reference String?           @db.VarChar(200)
+  createdAt DateTime          @default(now()) @db.Timestamptz(6)
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("sale_payments")
+}
+
+model SaleRefund {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  saleId        String   @db.Uuid
+  cashierUserId String   @db.Uuid
+  amount        Decimal  @db.Decimal(12, 2)
+  reason        String   @db.VarChar(500)
+  stockReturned Boolean  @default(false)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  sale    Sale   @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  cashier User   @relation("SaleRefundCashier", fields: [cashierUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@index([saleId])
+  @@map("sale_refunds")
+}
+
+model HeldShopSale {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid
+  cashierUserId String   @db.Uuid
+  payload       Json
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cashier User   @relation(fields: [cashierUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, cashierUserId, createdAt])
+  @@map("held_shop_sales")
+}
+
+model StockMovement {
+  id                    String            @id @default(uuid()) @db.Uuid
+  tenantId              String            @db.Uuid
+  userId                String            @db.Uuid
+  productId             String            @db.Uuid
+  batchId               String            @db.Uuid
+  saleId                String?           @db.Uuid
+  purchaseReceiptItemId String?           @db.Uuid
+  purchaseReturnItemId  String?           @db.Uuid
+  type                  StockMovementType
+  quantity              Int
+  reason                String            @db.VarChar(500)
+  createdAt             DateTime          @default(now()) @db.Timestamptz(6)
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch               ProductBatch         @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  sale                Sale?                @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  purchaseReceiptItem PurchaseReceiptItem? @relation(fields: [purchaseReceiptItemId], references: [id], onDelete: Restrict)
+  purchaseReturnItem  PurchaseReturnItem?  @relation(fields: [purchaseReturnItemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@index([productId, batchId, createdAt])
+  @@index([saleId])
+  @@index([purchaseReceiptItemId])
+  @@index([purchaseReturnItemId])
+  @@map("stock_movements")
 }

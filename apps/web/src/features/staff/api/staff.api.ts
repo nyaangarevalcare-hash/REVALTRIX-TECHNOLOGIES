@@ -205,3 +205,13 @@ export function getStaffAccessHistory(staffProfileId: string): Promise<StaffAcce
     `/v1/staff/${staffProfileId}/access-history`,
   );
 }
+
+// Aliases for StaffPage compatibility
+export const getStaffDirectory = getStaff;
+export const getStaffDocuments = listStaffDocuments;
+export const deleteStaffDocument = removeStaffDocument;
+export const getStaffTimeOff = listStaffTimeOff;
+export const removeStaffDepartmentAssignment = revokeStaffDepartment;
+export const updateStaffMemberStatus = (staffProfileId: string, input: { status: StaffMember['status']; reason?: string }) => updateStaffStatus(staffProfileId, input.status);
+export const offboardStaffMember = (staffProfileId: string, input: { reason?: string }) => updateStaffStatus(staffProfileId, 'OFFBOARDED');
+export const progressStaffInvitation = approveStaffInvitation;

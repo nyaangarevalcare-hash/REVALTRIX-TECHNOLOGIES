@@ -1,4 +1,4 @@
-import { apiRequest } from './api.js';
+import { ApiRequestError, apiDownload, apiRequest } from './api.js';
 import {
   clearAuthSession,
   getAuthSession,
@@ -33,10 +33,30 @@ export async function authenticatedApiRequest<T>(
       },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'Request failed with status 401') {
+    if (error instanceof ApiRequestError && error.status === 401) {
       clearAuthSession();
     }
 
+    throw error;
+  }
+}
+
+export async function authenticatedApiDownload(
+  path: string,
+  options: RequestInit = {},
+): Promise<Blob> {
+  const session = getAuthSession();
+  if (!session) throw new Error('Authentication required.');
+  try {
+    return await apiDownload(path, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 401) clearAuthSession();
     throw error;
   }
 }

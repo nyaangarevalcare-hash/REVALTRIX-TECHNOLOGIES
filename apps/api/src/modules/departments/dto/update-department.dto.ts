@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEmail,
   IsOptional,
   IsString,
   IsUUID,
@@ -19,6 +20,11 @@ export class UpdateDepartmentDto {
   @MinLength(2)
   @MaxLength(50)
   code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  shortName?: string | null;
 
   @IsOptional()
   @IsString()
@@ -61,4 +67,32 @@ export class UpdateDepartmentDto {
   @IsOptional()
   @IsUUID()
   parentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  headOfDepartment?: string | null;
+
+  @IsOptional()
+  @IsEmail()
+  contactEmail?: string | null;
+
+  @IsOptional()
+  @IsString()
+  contactPhone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  extensionNumber?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  appointmentBookingEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  walkInRegistrationEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  queueManagementEnabled?: boolean;
 }

@@ -35,7 +35,7 @@ export class PrivateObjectStorageService {
 
     if (!this.hasS3Configuration()) {
       this.logger.warn(
-        'S3 storage is not fully configured; private files will use local storage. Configure STORAGE_ENDPOINT, STORAGE_BUCKET, and S3 credentials for durable shared storage.',
+        'S3 storage is not fully or validly configured (check STORAGE_BUCKET naming rules: lowercase, 3-63 chars, no underscores/uppercase); private files will use local storage.',
       );
     }
   }
@@ -60,10 +60,17 @@ export class PrivateObjectStorageService {
     }
   }
 
+  private isValidBucketName(bucket: string): boolean {
+    // S3 bucket naming rules: 3-63 chars, lowercase letters, numbers, dots, hyphens. No uppercase or underscores.
+    const s3BucketRegex = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
+    return s3BucketRegex.test(bucket);
+  }
+
   private hasS3Configuration(): boolean {
     return Boolean(
       this.endpoint &&
       this.bucket &&
+      this.isValidBucketName(this.bucket) &&
       this.accessKeyId &&
       this.secretAccessKey &&
       !/<[^>]+>/.test(this.accessKeyId) &&

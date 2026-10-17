@@ -31,6 +31,11 @@ import { AssignStaffDepartmentDto } from './assign-staff-department.dto.js';
 export class CreateStaffDto {
   @IsOptional()
   @IsString()
+  verificationCode?: string;
+
+
+  @IsOptional()
+  @IsString()
   @MaxLength(100)
   staffNumber?: string;
 
