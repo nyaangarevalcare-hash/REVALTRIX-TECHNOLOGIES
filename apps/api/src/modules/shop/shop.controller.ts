@@ -24,11 +24,17 @@ import {
   CreateShopCategoryDto,
   CreateShopOrderDto,
   CreateShopPosSaleDto,
+  AssignShopOrderDto,
+  CancelShopOrderDto,
   HoldShopPosSaleDto,
   RefundShopPosSaleDto,
+  RefundShopOrderDto,
+  RecordShopOrderPaymentDto,
+  ReturnShopOrderDto,
   ReceiveShopPosBatchDto,
   ResumeShopPosSaleDto,
   UpdateShopOrderStatusDto,
+  UpdateShopOrderDto,
   UpdateShopProductDto,
   UpdateShopSettingsDto,
   BulkPriceUpdateDto,
@@ -488,13 +494,96 @@ export class ShopController {
     return this.shopService.listOrders(request.auth.userId);
   }
 
+  @Get('orders/:orderId')
+  async getOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+  ) {
+    return this.shopService.getOrder(request.auth.userId, orderId);
+  }
+
+  @Put('orders/:orderId')
+  async updateOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @Body() dto: UpdateShopOrderDto,
+  ) {
+    return this.shopService.updateOrder(request.auth.userId, orderId, dto);
+  }
+
+  @Put('orders/:orderId/status')
   @Patch('orders/:orderId/status')
   async updateOrderStatus(
     @Req() request: AuthenticatedRequest,
-    @Param('orderId') orderId: string,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
     @Body() dto: UpdateShopOrderStatusDto,
   ) {
     return this.shopService.updateOrderStatus(request.auth.userId, orderId, dto);
+  }
+
+  @Put('orders/:orderId/assign')
+  async assignOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @Body() dto: AssignShopOrderDto,
+  ) {
+    return this.shopService.assignOrder(request.auth.userId, orderId, dto);
+  }
+
+  @Post('orders/:orderId/payment')
+  async recordOrderPayment(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @Body() dto: RecordShopOrderPaymentDto,
+  ) {
+    return this.shopService.recordOrderPayment(request.auth.userId, orderId, dto);
+  }
+
+  @Post('orders/:orderId/refund')
+  async refundOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @Body() dto: RefundShopOrderDto,
+  ) {
+    return this.shopService.refundOrder(request.auth.userId, orderId, dto);
+  }
+
+  @Post('orders/:orderId/cancel')
+  async cancelOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @Body() dto: CancelShopOrderDto,
+  ) {
+    return this.shopService.cancelOrder(request.auth.userId, orderId, dto);
+  }
+
+  @Post('orders/:orderId/return')
+  async returnOrder(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @Body() dto: ReturnShopOrderDto,
+  ) {
+    return this.shopService.returnOrder(request.auth.userId, orderId, dto);
+  }
+
+  @Post('orders/:orderId/delivery-proof')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024, files: 1 } }))
+  async uploadOrderDeliveryProof(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+    @UploadedFile()
+    file?: { originalname: string; mimetype: string; buffer: Buffer; size: number },
+  ) {
+    if (!file) throw new BadRequestException('Select a delivery-proof file.');
+    return this.shopService.uploadDeliveryProof(request.auth.userId, orderId, file);
+  }
+
+  @Post('orders/:orderId/whatsapp-update')
+  async createOrderWhatsAppUpdate(
+    @Req() request: AuthenticatedRequest,
+    @Param('orderId', new ParseUUIDPipe()) orderId: string,
+  ) {
+    return this.shopService.createOrderWhatsAppUpdate(request.auth.userId, orderId);
   }
 
   @Get('products/:productId/batches')

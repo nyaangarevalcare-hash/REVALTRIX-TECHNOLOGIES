@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 
@@ -81,7 +78,7 @@ export class BatchService {
     tenantId: string,
     productId: string,
     quantityRequested: number,
-  ) {
+  ): Promise<BatchAllocationResult[]> {
     const activeBatches = await tx.productBatch.findMany({
       where: {
         productId,
@@ -95,12 +92,24 @@ export class BatchService {
     });
 
     let remaining = quantityRequested;
+    const allocations: BatchAllocationResult[] = [];
     for (const batch of activeBatches) {
       if (remaining <= 0) break;
       const take = Math.min(batch.quantity, remaining);
-      await tx.productBatch.update({
-        where: { id: batch.id },
+      const changed = await tx.productBatch.updateMany({
+        where: { id: batch.id, tenantId, productId, quantity: { gte: take } },
         data: { quantity: { decrement: take } },
+      });
+      if (changed.count !== 1) {
+        throw new BadRequestException(
+          'Batch stock changed during order fulfilment. Retry the operation.',
+        );
+      }
+      allocations.push({
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        quantityToTake: take,
+        expiryDate: batch.expiryDate,
       });
       remaining -= take;
     }
@@ -110,6 +119,7 @@ export class BatchService {
         `Insufficient unexpired batch stock for product ${productId}. Short by ${remaining} units.`,
       );
     }
+    return allocations;
   }
 
   /**

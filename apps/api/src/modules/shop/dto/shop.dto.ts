@@ -3,6 +3,7 @@ import {
   ProductStatus,
   ProductVatStatus,
   ProductVisibility,
+  ShopOrderType,
   ShopOrderStatus,
 } from '@prisma/client';
 import {
@@ -295,6 +296,10 @@ export class CreateShopOrderDto {
   deliveryMethod!: 'PICKUP' | 'DELIVERY';
 
   @IsOptional()
+  @IsEnum(ShopOrderType)
+  orderType?: ShopOrderType;
+
+  @IsOptional()
   @IsObject()
   deliveryAddress?: Record<string, string>;
 
@@ -309,6 +314,101 @@ export class CreateShopOrderDto {
 export class UpdateShopOrderStatusDto {
   @IsEnum(ShopOrderStatus)
   status!: ShopOrderStatus;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}
+
+export class UpdateShopOrderDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  deliveryAddress?: Record<string, string> | null;
+
+  @IsOptional()
+  @IsISO8601()
+  pickupAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  prescriptionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  prescriptionKey?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  deliveryNotes?: string | null;
+}
+
+export class AssignShopOrderDto {
+  @IsOptional()
+  @IsUUID()
+  staffId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  riderId?: string | null;
+}
+
+export class CancelShopOrderDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class RefundShopOrderDto {
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @IsString()
+  @Length(1, 500)
+  reason!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  returnToStock?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  method?: string;
+}
+
+export class RecordShopOrderPaymentDto {
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount!: number;
+
+  @IsString()
+  @Length(1, 40)
+  method!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reference?: string;
+}
+
+export class ReturnShopOrderDto {
+  @IsString()
+  @Length(1, 500)
+  reason!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  returnToStock?: boolean;
 }
 
 export class ShopPosSaleItemDto {

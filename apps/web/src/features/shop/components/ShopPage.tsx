@@ -3,6 +3,7 @@ import { authenticatedApiRequest } from '../../../lib/auth-api.js';
 import { ProductCataloguePage } from './ProductCataloguePage.js';
 import { ShopPurchasesPage } from './ShopPurchasesPage.js';
 import { ShopSuppliersPage } from './ShopSuppliersPage.js';
+import { ShopOrdersPage } from './ShopOrdersPage.js';
 import './ShopPage.css';
 
 interface ShopSettings {
@@ -193,14 +194,6 @@ const EMPTY_SETTINGS: ShopSettings = {
   deliveryFee: '0',
   minimumOrderValue: '0',
   currency: 'KES',
-};
-
-const ORDER_NEXT: Record<string, string[]> = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PACKED', 'CANCELLED'],
-  PACKED: ['READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'CANCELLED'],
-  READY_FOR_PICKUP: ['DELIVERED'],
-  OUT_FOR_DELIVERY: ['DELIVERED'],
 };
 
 function errorText(error: unknown): string {
@@ -1099,9 +1092,7 @@ export function ShopPage() {
         </>
       )}
 
-      {activeTab === 'Products' && (
-        <ProductCataloguePage initialSupplierId={selectedSupplierId} />
-      )}
+      {activeTab === 'Products' && <ProductCataloguePage initialSupplierId={selectedSupplierId} />}
       {activeTab === 'Purchases' && (
         <ShopPurchasesPage
           initialSupplierId={selectedSupplierId}
@@ -1593,60 +1584,7 @@ export function ShopPage() {
         </section>
       )}
 
-      {activeTab === 'Orders' && (
-        <section className="shop-panel">
-          <h2>
-            Customer Orders <span>{orders.length}</span>
-          </h2>
-          <div className="shop-table-wrap">
-            <table className="shop-table">
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Customer</th>
-                  <th>Total</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id}>
-                    <td>
-                      <strong>{order.orderNumber}</strong>
-                    </td>
-                    <td>{order.customerName}</td>
-                    <td>
-                      {order.currency} {order.total}
-                    </td>
-                    <td>{order.status}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {(ORDER_NEXT[order.status] ?? []).map((nextStatus) => (
-                        <button
-                          key={nextStatus}
-                          className="shop-btn primary"
-                          style={{ padding: '4px 10px', fontSize: '12px' }}
-                          onClick={() =>
-                            void submit(
-                              '/v1/shop/orders/' + order.id + '/status',
-                              'PATCH',
-                              { status: nextStatus },
-                              'Order status updated.',
-                            )
-                          }
-                          type="button"
-                        >
-                          {nextStatus}
-                        </button>
-                      ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      {activeTab === 'Orders' && <ShopOrdersPage />}
 
       {activeTab === 'Settings' && (
         <section className="shop-panel">
@@ -2382,9 +2320,7 @@ export function ShopPage() {
         </>
       )}
 
-      {(['Prescriptions', 'Customers', 'Reports'] as ShopTab[]).includes(
-        activeTab,
-      ) && (
+      {(['Prescriptions', 'Customers', 'Reports'] as ShopTab[]).includes(activeTab) && (
         <section className="shop-panel shop-unavailable" aria-live="polite">
           <h2>{activeTab}</h2>
           <p>

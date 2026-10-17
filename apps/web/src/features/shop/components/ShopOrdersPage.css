@@ -1,0 +1,420 @@
+.shop-orders {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.shop-orders-heading,
+.shop-order-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shop-orders-heading h2,
+.shop-order-drawer h2 {
+  margin: 0;
+}
+
+.shop-orders-heading p,
+.shop-order-drawer-header p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.shop-order-alert {
+  padding: 10px 12px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+}
+
+.shop-order-alert.is-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.shop-order-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shop-order-filters button {
+  flex: 0 0 auto;
+  min-height: 37px;
+  padding: 7px 11px;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.shop-order-filters button.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.shop-order-table-wrap {
+  max-width: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shop-order-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+}
+
+.shop-order-table.compact {
+  min-width: 650px;
+}
+
+.shop-order-table th,
+.shop-order-table td {
+  padding: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.shop-order-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.shop-order-table td {
+  font-size: 13px;
+}
+
+.shop-order-table td small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.shop-order-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1d4ed8;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-order-small {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.shop-order-status {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shop-order-status.status-cancelled,
+.shop-order-status.status-refunded,
+.shop-order-status.status-returned {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.shop-order-status.status-completed,
+.shop-order-status.status-delivered {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.shop-order-empty {
+  padding: 24px !important;
+  color: #64748b;
+  text-align: center !important;
+}
+
+.shop-order-backdrop,
+.shop-order-modal-backdrop {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  background: rgb(15 23 42 / 55%);
+}
+
+.shop-order-drawer {
+  box-sizing: border-box;
+  width: min(940px, 100%);
+  height: 100%;
+  padding: clamp(16px, 2vw, 26px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #fff;
+  color: #0f172a;
+}
+
+.shop-order-drawer-header {
+  position: sticky;
+  z-index: 1;
+  top: calc(-1 * clamp(16px, 2vw, 26px));
+  margin: calc(-1 * clamp(16px, 2vw, 26px)) calc(-1 * clamp(16px, 2vw, 26px)) 14px;
+  padding: 15px clamp(16px, 2vw, 26px);
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.shop-order-drawer-header > button {
+  min-width: 42px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+.shop-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.shop-order-actions button {
+  min-height: 38px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.shop-order-drawer > h3 {
+  margin: 20px 0 8px;
+  font-size: 15px;
+}
+
+.shop-order-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shop-order-grid article {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.shop-order-grid h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.shop-order-grid p {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.shop-order-inline-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shop-order-inline-form input:not([type='file']) {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font: inherit;
+}
+
+.shop-order-timeline {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0 0 0 21px;
+}
+
+.shop-order-timeline li {
+  padding-left: 4px;
+  color: #334155;
+  font-size: 13px;
+}
+
+.shop-order-timeline small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.shop-order-invoice {
+  display: none;
+}
+
+.shop-order-modal-backdrop {
+  z-index: 2;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: auto;
+  background: rgb(15 23 42 / 45%);
+}
+
+.shop-order-modal {
+  box-sizing: border-box;
+  display: grid;
+  gap: 13px;
+  width: min(480px, 100%);
+  max-height: 100%;
+  padding: 20px;
+  overflow: auto;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.shop-order-modal h3 {
+  margin: 0;
+}
+
+.shop-order-modal label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.shop-order-modal input,
+.shop-order-modal textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font: inherit;
+}
+
+.shop-order-modal textarea {
+  min-height: 80px;
+}
+
+.shop-order-modal .shop-order-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shop-order-modal .shop-order-checkbox input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.shop-order-modal footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.shop-btn.danger {
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #b91c1c;
+}
+
+@media (max-width: 640px) {
+  .shop-orders-heading {
+    align-items: flex-start;
+  }
+
+  .shop-order-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-order-drawer {
+    padding: 14px;
+  }
+
+  .shop-order-drawer-header {
+    top: -14px;
+    margin: -14px -14px 14px;
+    padding: 12px 14px;
+  }
+
+  .shop-order-modal-backdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .shop-order-modal {
+    width: 100%;
+    border-radius: 0;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .shop-order-invoice,
+  .shop-order-invoice * {
+    visibility: visible;
+  }
+
+  .shop-order-invoice {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    display: block;
+    padding: 18mm;
+    color: #000;
+  }
+
+  .shop-order-invoice table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .shop-order-invoice th,
+  .shop-order-invoice td {
+    padding: 7px;
+    border-bottom: 1px solid #bbb;
+    text-align: left;
+  }
+}

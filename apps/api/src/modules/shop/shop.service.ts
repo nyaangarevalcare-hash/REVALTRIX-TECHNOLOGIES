@@ -11,22 +11,30 @@ import {
   SalePaymentMethod,
   SalePaymentStatus,
   SaleStatus,
+  ShopOrderType,
   ShopOrderStatus,
   StockMovementType,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../database/database.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
+import { PrivateObjectStorageService } from '../storage/private-object-storage.service.js';
 import type {
+  AssignShopOrderDto,
+  CancelShopOrderDto,
   CreateShopCategoryDto,
   CreateShopOrderDto,
   CreateShopProductDto,
   CreateShopPosSaleDto,
   HoldShopPosSaleDto,
   RefundShopPosSaleDto,
+  RefundShopOrderDto,
+  RecordShopOrderPaymentDto,
+  ReturnShopOrderDto,
   ReceiveShopPosBatchDto,
   ResumeShopPosSaleDto,
   UpdateShopOrderStatusDto,
+  UpdateShopOrderDto,
   UpdateShopProductDto,
   UpdateShopSettingsDto,
 } from './dto/shop.dto.js';
@@ -37,6 +45,7 @@ export class ShopService {
     private readonly database: DatabaseService,
     private readonly authorization: AuthorizationService,
     private readonly batchService: BatchService,
+    private readonly storage: PrivateObjectStorageService,
   ) {}
 
   async getSettings(userId: string) {
@@ -1014,7 +1023,7 @@ export class ShopService {
         }
         if (product.prescriptionRequired) {
           throw new BadRequestException(
-            `${product.name} requires prescription review, which is not available in this shop flow.`,
+            `${product.name} cannot be dispensed until a prescription is verified by the pharmacy.`,
           );
         }
         const lineSubtotal = product.price.mul(item.quantity);
@@ -1053,7 +1062,11 @@ export class ShopService {
       const order = await tx.shopOrder.create({
         data: {
           tenantId: context.tenantId,
+          branchId: context.branchId ?? null,
           orderNumber: `SHOP-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+          orderType:
+            dto.orderType ??
+            (dto.deliveryMethod === 'DELIVERY' ? ShopOrderType.DELIVERY : ShopOrderType.PICKUP),
           currency: settings.currency,
           subtotal,
           deliveryFee,
@@ -1064,19 +1077,39 @@ export class ShopService {
           customerName: dto.customerName.trim(),
           customerPhone: dto.customerPhone.trim(),
           ...(dto.customerEmail && { customerEmail: dto.customerEmail.trim() }),
+          statusHistory: {
+            create: {
+              tenantId: context.tenantId,
+              toStatus: ShopOrderStatus.PENDING,
+              actorUserId: userId,
+              notes: 'Order created',
+            },
+          },
+          ...(dto.deliveryMethod === 'DELIVERY' && {
+            deliveries: {
+              create: {
+                tenantId: context.tenantId,
+                fee: deliveryFee,
+                address: dto.deliveryAddress ?? Prisma.JsonNull,
+                customerPhone: dto.customerPhone.trim(),
+              },
+            },
+          }),
           items: {
             create: lines.map(({ item, product, lineTotal }) => ({
               productId: product.id,
               productName: product.name,
               sku: product.sku,
               quantity: item.quantity,
+              unit: product.unit,
               unitPrice: product.price,
+              discount: 0,
               taxRate: product.taxRate,
               lineTotal,
             })),
           },
         },
-        include: { items: true },
+        include: { items: true, statusHistory: true, deliveries: true },
       });
 
       await tx.auditEvent.create({
@@ -1095,13 +1128,557 @@ export class ShopService {
   }
 
   async listOrders(userId: string) {
-    const { tenantId } = await this.authorization.getContext(userId);
+    const { tenantId } = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'read',
+    });
     return this.database.client.shopOrder.findMany({
       where: { tenantId },
-      include: { items: true },
+      include: {
+        items: true,
+        payments: { orderBy: { createdAt: 'desc' } },
+        statusHistory: { orderBy: { createdAt: 'asc' } },
+        deliveries: { include: { proofs: { orderBy: { createdAt: 'desc' } } } },
+      },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+  }
+
+  async getOrder(userId: string, orderId: string) {
+    const { tenantId } = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'read',
+    });
+    const order = await this.database.client.shopOrder.findFirst({
+      where: { id: orderId, tenantId },
+      include: {
+        items: true,
+        payments: { orderBy: { createdAt: 'desc' } },
+        statusHistory: { orderBy: { createdAt: 'asc' } },
+        deliveries: { include: { proofs: { orderBy: { createdAt: 'desc' } } } },
+      },
+    });
+    if (!order) throw new NotFoundException('Shop order not found.');
+    return order;
+  }
+
+  async updateOrder(userId: string, orderId: string, dto: UpdateShopOrderDto) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'update',
+    });
+    const data: Prisma.ShopOrderUpdateInput = {};
+    if (dto.notes !== undefined) data.notes = dto.notes;
+    if (dto.deliveryAddress !== undefined)
+      data.deliveryAddress = dto.deliveryAddress ?? Prisma.JsonNull;
+    if (dto.pickupAt !== undefined) data.pickupAt = dto.pickupAt ? new Date(dto.pickupAt) : null;
+    if (dto.prescriptionId !== undefined) data.prescriptionId = dto.prescriptionId;
+    if (dto.prescriptionKey !== undefined) data.prescriptionKey = dto.prescriptionKey;
+    if (dto.deliveryNotes !== undefined) data.deliveryNotes = dto.deliveryNotes;
+    return this.database.client.$transaction(async (tx) => {
+      const updatedCount = await tx.shopOrder.updateMany({
+        where: { id: orderId, tenantId: context.tenantId },
+        data,
+      });
+      if (updatedCount.count !== 1) throw new NotFoundException('Shop order not found.');
+      const order = await tx.shopOrder.findFirstOrThrow({
+        where: { id: orderId, tenantId: context.tenantId },
+        include: {
+          items: true,
+          payments: true,
+          statusHistory: true,
+          deliveries: { include: { proofs: true } },
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId: context.tenantId,
+          actorUserId: userId,
+          action: 'SHOP_ORDER_UPDATED',
+          resourceType: 'SHOP_ORDER',
+          resourceId: order.id,
+          outcome: 'SUCCESS',
+          metadata: { fields: Object.keys(dto) },
+        },
+      });
+      return order;
+    });
+  }
+
+  async assignOrder(userId: string, orderId: string, dto: AssignShopOrderDto) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'update',
+    });
+    for (const assignedUserId of [dto.staffId, dto.riderId]) {
+      if (assignedUserId) {
+        const profile = await this.database.client.staffProfile.findFirst({
+          where: { tenantId: context.tenantId, userId: assignedUserId, status: 'ACTIVE' },
+          select: { id: true },
+        });
+        if (!profile)
+          throw new BadRequestException('Assigned staff must be active in this tenant.');
+      }
+    }
+    return this.database.client.$transaction(async (tx) => {
+      const order = await tx.shopOrder.findFirst({
+        where: { id: orderId, tenantId: context.tenantId },
+        select: { id: true },
+      });
+      if (!order) throw new NotFoundException('Shop order not found.');
+      const assignment: Prisma.ShopOrderUpdateInput = {};
+      if (dto.staffId !== undefined) assignment.assignedStaffId = dto.staffId;
+      if (dto.riderId !== undefined) assignment.assignedRiderId = dto.riderId;
+      const updated = await tx.shopOrder.update({
+        where: { id: order.id },
+        data: assignment,
+      });
+      const delivery = await tx.delivery.findFirst({
+        where: { tenantId: context.tenantId, orderId: order.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (delivery && dto.riderId !== undefined) {
+        await tx.delivery.update({
+          where: { id: delivery.id },
+          data: { riderId: dto.riderId },
+        });
+      }
+      await tx.auditEvent.create({
+        data: {
+          tenantId: context.tenantId,
+          actorUserId: userId,
+          action: 'SHOP_ORDER_ASSIGNED',
+          resourceType: 'SHOP_ORDER',
+          resourceId: order.id,
+          outcome: 'SUCCESS',
+          metadata: { staffId: dto.staffId ?? null, riderId: dto.riderId ?? null },
+        },
+      });
+      return updated;
+    });
+  }
+
+  async recordOrderPayment(userId: string, orderId: string, dto: RecordShopOrderPaymentDto) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'update',
+    });
+    return this.database.client.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "shop_orders"
+        WHERE "id" = ${orderId}::uuid AND "tenantId" = ${context.tenantId}::uuid
+        FOR UPDATE
+      `;
+      const order = await tx.shopOrder.findFirst({
+        where: { id: orderId, tenantId: context.tenantId },
+        include: { payments: true },
+      });
+      if (!order) throw new NotFoundException('Shop order not found.');
+      const recordedPaid = order.payments
+        .filter((payment) => !payment.isRefund && payment.status === 'PAID')
+        .reduce((total, payment) => total.add(payment.amount), new Prisma.Decimal(0));
+      const paid =
+        recordedPaid.isZero() && order.paymentStatus === 'PAID'
+          ? new Prisma.Decimal(order.total)
+          : recordedPaid;
+      const outstanding = order.total.sub(paid);
+      const amount = new Prisma.Decimal(dto.amount);
+      if (amount.greaterThan(outstanding)) {
+        throw new BadRequestException('Payment exceeds the outstanding order balance.');
+      }
+      const payment = await tx.shopOrderPayment.create({
+        data: {
+          tenantId: context.tenantId,
+          orderId,
+          amount,
+          currency: order.currency,
+          method: dto.method.trim().toUpperCase(),
+          status: 'PAID',
+          reference: dto.reference?.trim() || null,
+          recordedById: userId,
+        },
+      });
+      const paidTotal = paid.add(amount);
+      await tx.shopOrder.update({
+        where: { id: orderId },
+        data: {
+          paymentMethod: dto.method.trim().toUpperCase(),
+          paymentStatus: paidTotal.greaterThanOrEqualTo(order.total) ? 'PAID' : 'PENDING',
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId: context.tenantId,
+          actorUserId: userId,
+          action: 'SHOP_ORDER_PAYMENT_RECORDED',
+          resourceType: 'SHOP_ORDER',
+          resourceId: orderId,
+          outcome: 'SUCCESS',
+          metadata: { amount: amount.toString(), method: dto.method },
+        },
+      });
+      return payment;
+    });
+  }
+
+  async refundOrder(userId: string, orderId: string, dto: RefundShopOrderDto) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'update',
+    });
+    return this.database.client.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "shop_orders"
+        WHERE "id" = ${orderId}::uuid AND "tenantId" = ${context.tenantId}::uuid
+        FOR UPDATE
+      `;
+      const order = await tx.shopOrder.findFirst({
+        where: { id: orderId, tenantId: context.tenantId },
+        include: {
+          items: true,
+          payments: true,
+          stockMovements: { where: { type: StockMovementType.SALE } },
+          deliveries: { select: { returnedToStock: true } },
+        },
+      });
+      if (!order) throw new NotFoundException('Shop order not found.');
+      const recordedPaid = order.payments
+        .filter((payment) => !payment.isRefund && payment.status === 'PAID')
+        .reduce((total, payment) => total.add(payment.amount), new Prisma.Decimal(0));
+      const paid =
+        recordedPaid.isZero() && order.paymentStatus === 'PAID'
+          ? new Prisma.Decimal(order.total)
+          : recordedPaid;
+      const alreadyRefunded = order.payments
+        .filter((payment) => payment.isRefund)
+        .reduce((total, payment) => total.add(payment.amount), new Prisma.Decimal(0));
+      const amount = new Prisma.Decimal(dto.amount);
+      const refundable = paid.sub(alreadyRefunded);
+      if (amount.greaterThan(refundable) || refundable.lessThanOrEqualTo(0)) {
+        throw new BadRequestException('Refund exceeds the paid, unrefunded amount.');
+      }
+      const fullyRefunded = alreadyRefunded.add(amount).greaterThanOrEqualTo(paid);
+      if (dto.returnToStock) {
+        if (alreadyRefunded.add(amount).lessThan(order.total)) {
+          throw new BadRequestException('Return all items to stock only with a full order refund.');
+        }
+        if (!fullyRefunded) {
+          throw new BadRequestException('Stock can only be returned with the final full refund.');
+        }
+        if (order.payments.some((payment) => payment.isRefund && payment.stockReturned)) {
+          throw new BadRequestException('Stock has already been returned for this order.');
+        }
+        if (order.deliveries.some((delivery) => delivery.returnedToStock)) {
+          throw new BadRequestException('Stock has already been returned for this order.');
+        }
+        if (order.stockMovements.length === 0) {
+          throw new BadRequestException(
+            'No recorded batch movement is available to return to stock.',
+          );
+        }
+        for (const movement of order.stockMovements) {
+          const batchUpdate = await tx.productBatch.updateMany({
+            where: {
+              id: movement.batchId,
+              tenantId: context.tenantId,
+              productId: movement.productId,
+              expiryDate: { gte: new Date() },
+            },
+            data: { quantity: { increment: movement.quantity } },
+          });
+          if (batchUpdate.count !== 1) {
+            throw new BadRequestException(
+              'An original batch has expired or is no longer available for return.',
+            );
+          }
+          await tx.product.update({
+            where: { id: movement.productId },
+            data: { stockQuantity: { increment: movement.quantity } },
+          });
+          await tx.stockMovement.create({
+            data: {
+              tenantId: context.tenantId,
+              userId,
+              productId: movement.productId,
+              batchId: movement.batchId,
+              shopOrderId: order.id,
+              type: StockMovementType.REFUND,
+              quantity: movement.quantity,
+              reason: `Returned to stock: ${dto.reason.trim()}`,
+            },
+          });
+        }
+      }
+      const refund = await tx.shopOrderPayment.create({
+        data: {
+          tenantId: context.tenantId,
+          orderId,
+          amount,
+          currency: order.currency,
+          method: dto.method?.trim().toUpperCase() || order.paymentMethod || 'OTHER',
+          status: 'REFUNDED',
+          isRefund: true,
+          stockReturned: dto.returnToStock ?? false,
+          reason: dto.reason.trim(),
+          recordedById: userId,
+        },
+      });
+      if (fullyRefunded) {
+        await tx.shopOrder.update({
+          where: { id: orderId },
+          data: {
+            status: ShopOrderStatus.REFUNDED,
+            fulfilmentStatus: ShopOrderStatus.REFUNDED,
+            paymentStatus: 'REFUNDED',
+          },
+        });
+        await tx.shopOrderStatusHistory.create({
+          data: {
+            tenantId: context.tenantId,
+            orderId,
+            fromStatus: order.status,
+            toStatus: ShopOrderStatus.REFUNDED,
+            actorUserId: userId,
+            notes: dto.reason.trim(),
+          },
+        });
+      }
+      await tx.auditEvent.create({
+        data: {
+          tenantId: context.tenantId,
+          actorUserId: userId,
+          action: 'SHOP_ORDER_REFUNDED',
+          resourceType: 'SHOP_ORDER',
+          resourceId: orderId,
+          outcome: 'SUCCESS',
+          reason: dto.reason.trim(),
+          metadata: { amount: amount.toString(), stockReturned: dto.returnToStock ?? false },
+        },
+      });
+      return refund;
+    });
+  }
+
+  async cancelOrder(userId: string, orderId: string, dto: CancelShopOrderDto) {
+    return this.updateOrderStatus(userId, orderId, {
+      status: ShopOrderStatus.CANCELLED,
+      notes: dto.reason?.trim() || 'Order cancelled',
+    });
+  }
+
+  async returnOrder(userId: string, orderId: string, dto: ReturnShopOrderDto) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'update',
+    });
+    return this.database.client.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "shop_orders"
+        WHERE "id" = ${orderId}::uuid AND "tenantId" = ${context.tenantId}::uuid
+        FOR UPDATE
+      `;
+      const order = await tx.shopOrder.findFirst({
+        where: { id: orderId, tenantId: context.tenantId },
+        include: {
+          stockMovements: { where: { type: StockMovementType.SALE } },
+          deliveries: { orderBy: { createdAt: 'desc' }, take: 1 },
+          payments: true,
+        },
+      });
+      if (!order) throw new NotFoundException('Shop order not found.');
+      if (!['OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status)) {
+        throw new BadRequestException(
+          'Only orders that are out for delivery or delivered can be returned.',
+        );
+      }
+      const shouldRestock = dto.returnToStock ?? false;
+      if (shouldRestock) {
+        if (!order.stockMovements.length) {
+          throw new BadRequestException(
+            'No recorded batch movements are available to return to stock.',
+          );
+        }
+        if (order.payments.some((payment) => payment.isRefund && payment.stockReturned)) {
+          throw new BadRequestException('Stock has already been returned for this order.');
+        }
+        for (const movement of order.stockMovements) {
+          const batchUpdate = await tx.productBatch.updateMany({
+            where: {
+              id: movement.batchId,
+              tenantId: context.tenantId,
+              productId: movement.productId,
+              expiryDate: { gte: new Date() },
+            },
+            data: { quantity: { increment: movement.quantity } },
+          });
+          if (batchUpdate.count !== 1) {
+            throw new BadRequestException(
+              'An original batch has expired and cannot be returned to saleable stock.',
+            );
+          }
+          await tx.product.update({
+            where: { id: movement.productId },
+            data: { stockQuantity: { increment: movement.quantity } },
+          });
+          await tx.stockMovement.create({
+            data: {
+              tenantId: context.tenantId,
+              userId,
+              productId: movement.productId,
+              batchId: movement.batchId,
+              shopOrderId: order.id,
+              type: StockMovementType.REFUND,
+              quantity: movement.quantity,
+              reason: `Returned delivery: ${dto.reason.trim()}`,
+            },
+          });
+        }
+      }
+      const updated = await tx.shopOrder.update({
+        where: { id: order.id },
+        data: {
+          status: ShopOrderStatus.RETURNED,
+          fulfilmentStatus: ShopOrderStatus.RETURNED,
+          failedDeliveryReason: dto.reason.trim(),
+        },
+      });
+      const delivery = order.deliveries[0];
+      if (delivery) {
+        await tx.delivery.update({
+          where: { id: delivery.id },
+          data: {
+            failedDeliveryReason: dto.reason.trim(),
+            returnedToStock: shouldRestock,
+          },
+        });
+      }
+      await tx.shopOrderStatusHistory.create({
+        data: {
+          tenantId: context.tenantId,
+          orderId,
+          fromStatus: order.status,
+          toStatus: ShopOrderStatus.RETURNED,
+          actorUserId: userId,
+          notes: dto.reason.trim(),
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          tenantId: context.tenantId,
+          actorUserId: userId,
+          action: 'SHOP_ORDER_RETURNED',
+          resourceType: 'SHOP_ORDER',
+          resourceId: orderId,
+          outcome: 'SUCCESS',
+          reason: dto.reason.trim(),
+          metadata: { returnedToStock: shouldRestock },
+        },
+      });
+      return updated;
+    });
+  }
+
+  async uploadDeliveryProof(
+    userId: string,
+    orderId: string,
+    file: { originalname: string; mimetype: string; buffer: Buffer; size: number },
+  ) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'update',
+    });
+    const mimeTypes: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'application/pdf': 'pdf',
+    };
+    const extension = mimeTypes[file.mimetype];
+    if (!extension || file.size > 10 * 1024 * 1024 || file.buffer.length !== file.size) {
+      throw new BadRequestException('Delivery proof must be a JPG, PNG, WebP, or PDF up to 10 MB.');
+    }
+    const order = await this.database.client.shopOrder.findFirst({
+      where: { id: orderId, tenantId: context.tenantId, deliveryMethod: 'DELIVERY' },
+      select: { id: true, deliveryAddress: true, customerPhone: true, deliveryFee: true },
+    });
+    if (!order) throw new NotFoundException('Delivery order not found.');
+    const existingDelivery = await this.database.client.delivery.findFirst({
+      where: { tenantId: context.tenantId, orderId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const delivery =
+      existingDelivery ??
+      (await this.database.client.delivery.create({
+        data: {
+          tenantId: context.tenantId,
+          orderId,
+          address: order.deliveryAddress ?? Prisma.JsonNull,
+          customerPhone: order.customerPhone,
+          fee: order.deliveryFee,
+        },
+      }));
+    const storageKey = `shop/delivery-proofs/${context.tenantId}/${orderId}/${randomUUID()}.${extension}`;
+    await this.storage.put(storageKey, file.buffer, file.mimetype);
+    const proof = await this.database.client.deliveryProof.create({
+      data: {
+        deliveryId: delivery.id,
+        storageKey,
+        fileName: file.originalname.slice(0, 255),
+        mimeType: file.mimetype,
+        uploadedById: userId,
+      },
+    });
+    await this.database.client.auditEvent.create({
+      data: {
+        tenantId: context.tenantId,
+        actorUserId: userId,
+        action: 'SHOP_ORDER_DELIVERY_PROOF_UPLOADED',
+        resourceType: 'SHOP_ORDER',
+        resourceId: orderId,
+        outcome: 'SUCCESS',
+        metadata: { proofId: proof.id, mimeType: file.mimetype },
+      },
+    });
+    return {
+      id: proof.id,
+      fileName: proof.fileName,
+      mimeType: proof.mimeType,
+      createdAt: proof.createdAt,
+    };
+  }
+
+  async createOrderWhatsAppUpdate(userId: string, orderId: string) {
+    const context = await this.authorization.assertPermission(userId, {
+      resource: 'shop',
+      action: 'read',
+    });
+    const order = await this.database.client.shopOrder.findFirst({
+      where: { id: orderId, tenantId: context.tenantId },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        customerName: true,
+        customerPhone: true,
+      },
+    });
+    if (!order) throw new NotFoundException('Shop order not found.');
+    const phone = order.customerPhone.replace(/\D/g, '');
+    if (phone.length < 8)
+      throw new BadRequestException('The order does not have a valid WhatsApp phone number.');
+    const message = `Hello ${order.customerName}, order ${order.orderNumber} is ${order.status.replaceAll('_', ' ').toLowerCase()}.`;
+    await this.database.client.auditEvent.create({
+      data: {
+        tenantId: context.tenantId,
+        actorUserId: userId,
+        action: 'SHOP_ORDER_WHATSAPP_DRAFT_CREATED',
+        resourceType: 'SHOP_ORDER',
+        resourceId: order.id,
+        outcome: 'SUCCESS',
+      },
+    });
+    return { whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(message)}` };
   }
 
   async updateOrderStatus(userId: string, orderId: string, dto: UpdateShopOrderStatusDto) {
@@ -1125,6 +1702,9 @@ export class ShopService {
         throw new NotFoundException('Shop order not found.');
       }
       this.assertOrderTransition(order.status, dto.status, order.deliveryMethod);
+      if (dto.status === ShopOrderStatus.COMPLETED && order.paymentStatus !== 'PAID') {
+        throw new BadRequestException('Record full payment before completing this order.');
+      }
       if (dto.status === ShopOrderStatus.CANCELLED) {
         for (const item of order.items) {
           const released = await tx.product.updateMany({
@@ -1144,15 +1724,13 @@ export class ShopService {
         (dto.status === ShopOrderStatus.DELIVERED && order.deliveryMethod === 'PICKUP')
       ) {
         for (const item of order.items) {
-          // 1. Allocate and decrement batches using FEFO
-          await this.batchService.allocateAndDecrementBatches(
+          const allocations = await this.batchService.allocateAndDecrementBatches(
             tx,
             context.tenantId,
             item.productId,
             item.quantity,
           );
 
-          // 2. Decrement product totals and reserved stock
           const changed = await tx.product.updateMany({
             where: {
               id: item.productId,
@@ -1168,13 +1746,79 @@ export class ShopService {
           if (changed.count !== 1) {
             throw new ConflictException('Reserved stock no longer matches this order.');
           }
+          for (const allocation of allocations) {
+            await tx.stockMovement.create({
+              data: {
+                tenantId: context.tenantId,
+                userId,
+                productId: item.productId,
+                batchId: allocation.batchId,
+                shopOrderId: order.id,
+                type: StockMovementType.SALE,
+                quantity: allocation.quantityToTake,
+                reason: `Fulfilled shop order ${order.orderNumber}`,
+              },
+            });
+          }
         }
       }
+      const now = new Date();
       const updated = await tx.shopOrder.update({
         where: { id: order.id },
-        data: { status: dto.status },
-        include: { items: true },
+        data: {
+          status: dto.status,
+          fulfilmentStatus: dto.status,
+          ...(dto.status === ShopOrderStatus.DELIVERED && { deliveryNotes: order.deliveryNotes }),
+        },
+        include: {
+          items: true,
+          payments: true,
+          statusHistory: true,
+          deliveries: { include: { proofs: true } },
+        },
       });
+      await tx.shopOrderStatusHistory.create({
+        data: {
+          tenantId: context.tenantId,
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus: dto.status,
+          actorUserId: userId,
+          notes: dto.notes?.trim() || null,
+        },
+      });
+      if (
+        order.deliveryMethod === 'DELIVERY' &&
+        [ShopOrderStatus.OUT_FOR_DELIVERY, ShopOrderStatus.DELIVERED].includes(dto.status)
+      ) {
+        const delivery = await tx.delivery.findFirst({
+          where: { tenantId: context.tenantId, orderId: order.id },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (delivery) {
+          await tx.delivery.update({
+            where: { id: delivery.id },
+            data: {
+              riderId: order.assignedRiderId,
+              ...(dto.status === ShopOrderStatus.DELIVERED && { deliveredAt: now }),
+              ...(dto.notes && { notes: dto.notes.trim() }),
+            },
+          });
+        } else {
+          await tx.delivery.create({
+            data: {
+              tenantId: context.tenantId,
+              orderId: order.id,
+              riderId: order.assignedRiderId,
+              fee: order.deliveryFee,
+              address: order.deliveryAddress ?? Prisma.JsonNull,
+              customerPhone: order.customerPhone,
+              ...(dto.status === ShopOrderStatus.DELIVERED && { deliveredAt: now }),
+              ...(dto.notes && { notes: dto.notes.trim() }),
+            },
+          });
+        }
+      }
       await tx.auditEvent.create({
         data: {
           tenantId: context.tenantId,
@@ -1183,6 +1827,7 @@ export class ShopService {
           resourceType: 'SHOP_ORDER',
           resourceId: order.id,
           outcome: 'SUCCESS',
+          reason: dto.notes?.trim() || null,
           metadata: { from: order.status, to: dto.status },
         },
       });
@@ -1236,7 +1881,13 @@ export class ShopService {
   ) {
     const transitions: Record<ShopOrderStatus, ShopOrderStatus[]> = {
       PENDING: [ShopOrderStatus.CONFIRMED, ShopOrderStatus.CANCELLED],
-      CONFIRMED: [ShopOrderStatus.PACKED, ShopOrderStatus.CANCELLED],
+      CONFIRMED: [ShopOrderStatus.PACKING, ShopOrderStatus.PACKED, ShopOrderStatus.CANCELLED],
+      PACKING: [
+        ShopOrderStatus.PACKED,
+        ShopOrderStatus.READY_FOR_PICKUP,
+        ShopOrderStatus.OUT_FOR_DELIVERY,
+        ShopOrderStatus.CANCELLED,
+      ],
       PACKED: [
         ShopOrderStatus.READY_FOR_PICKUP,
         ShopOrderStatus.OUT_FOR_DELIVERY,
@@ -1244,8 +1895,10 @@ export class ShopService {
       ],
       READY_FOR_PICKUP: [ShopOrderStatus.DELIVERED],
       OUT_FOR_DELIVERY: [ShopOrderStatus.DELIVERED],
-      DELIVERED: [],
+      DELIVERED: [ShopOrderStatus.COMPLETED],
+      COMPLETED: [],
       CANCELLED: [],
+      RETURNED: [],
       REFUNDED: [],
     };
     if (!transitions[current].includes(next)) {
